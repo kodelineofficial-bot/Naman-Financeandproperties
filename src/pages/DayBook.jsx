@@ -1,0 +1,202 @@
+import { Link, useSearchParams } from 'react-router-dom';
+import { useToast } from '../components/Toast.jsx';
+import { Amount, Card, Empty, ErrorBox, Loading, PageHeader, Stat } from '../components/ui.jsx';
+import { deleteLedgerEntry, getLedger, getOpeningOn } from '../lib/api.js';
+import { LEDGER_KINDS, addDays, fmtDate, fmtWeekday, modeLabel, money, round2, sum, toNum, todayStr } from '../lib/format.js';
+import { useAction, useLoad } from '../lib/hooks.js';
+import { q, supabase } from '../lib/supabase.js';
+
+const LINK_FOR = {
+  disbursement: (r) => `/loans/${r.ref_id}`,
+  collection: (r) => `/loans/${r.ref_id}`,
+  salary: (r) => `/employees/${r.ref_id}`,
+  employee_advance: (r) => `/employees/${r.ref_id}`,
+};
+
+function LedgerTable({ rows, onDelete }) {
+  if (!rows.length) return <Empty>No entries.</Empty>;
+  return (
+    <div className="table-wrap">
+      <table className="table">
+        <thead>
+          <tr><th>Type</th><th>Party / Details</th><th>Mode</th><th className="num">Amount</th><th /></tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const link = LINK_FOR[r.kind]?.(r);
+            return (
+              <tr key={r.kind + r.id}>
+                <td className="nowrap">{LEDGER_KINDS[r.kind]?.short || r.kind}</td>
+                <td>
+                  {link && r.ref_id ? <Link to={link}>{r.party}</Link> : r.party}
+                  {r.note && <div className="muted small">{r.note}</div>}
+                </td>
+                <td>{modeLabel(r.mode)}</td>
+                <td className="num"><Amount value={r.amount} dir={r.direction} /></td>
+                <td className="num no-print">
+                  <button className="icon-btn danger" title="Delete entry" onClick={() => onDelete(r)}>🗑</button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Day Book (रोज़नामचा): full detail of one day — opening, every in/out, closing, who didn't pay. */
+export default function DayBook() {
+  const toast = useToast();
+  const [busy, run] = useAction(toast);
+  const [params, setParams] = useSearchParams();
+  const date = params.get('date') || todayStr();
+  const setDate = (d) => setParams({ date: d }, { replace: true });
+
+  const { data, loading, error } = useLoad(async () => {
+    const [opening, entries, newLoans, dueLoans, paidRows] = await Promise.all([
+      getOpeningOn(date),
+      getLedger(date, date),
+      q(
+        supabase
+          .from('loan_summary')
+          .select('id,loan_no,borrower_name,principal,interest_amount,advance_amount,net_disbursable,disbursed')
+          .eq('loan_date', date)
+          .neq('status', 'cancelled'),
+      ),
+      q(
+        supabase
+          .from('loan_summary')
+          .select('id,loan_no,borrower_name,borrower_phone,daily_installment,outstanding,overdue')
+          .in('status', ['active', 'defaulted'])
+          .lte('collection_start_date', date),
+      ),
+      q(supabase.from('loan_repayments').select('loan_id').eq('paid_on', date)),
+    ]);
+    const paidSet = new Set(paidRows.map((r) => r.loan_id));
+    const missed = dueLoans.filter((l) => !paidSet.has(l.id) && toNum(l.outstanding) > 0);
+    return { opening, entries, newLoans, missed };
+  }, [date]);
+
+  async function onDelete(r) {
+    if (!window.confirm(`Delete this ${LEDGER_KINDS[r.kind]?.short} entry of ${money(r.amount)}?`)) return;
+    await run(() => deleteLedgerEntry(r), 'Entry deleted');
+  }
+
+  const entries = data?.entries || [];
+  const ins = entries.filter((e) => e.direction === 'in');
+  const outs = entries.filter((e) => e.direction === 'out');
+  const totalIn = sum(ins, 'amount');
+  const totalOut = sum(outs, 'amount');
+  const opening = data?.opening ?? 0;
+  const closing = round2(opening + totalIn - totalOut);
+
+  const byKind = {};
+  for (const e of entries) byKind[e.kind] = round2((byKind[e.kind] || 0) + toNum(e.amount));
+
+  return (
+    <>
+      <PageHeader title="Day Book" hindi="रोज़नामचा" subtitle={`${fmtWeekday(date)}, ${fmtDate(date)} — full detail of the day`}>
+        <div className="date-nav">
+          <button className="btn btn-sm" onClick={() => setDate(addDays(date, -1))}>‹ Prev</button>
+          <input type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
+          <button className="btn btn-sm" onClick={() => setDate(addDays(date, 1))}>Next ›</button>
+          {date !== todayStr() && <button className="btn btn-sm" onClick={() => setDate(todayStr())}>Today</button>}
+        </div>
+        <button className="btn no-print" onClick={() => window.print()}>Print</button>
+      </PageHeader>
+      <ErrorBox error={error} />
+
+      {!data ? (
+        <Loading />
+      ) : (
+        <>
+          <div className="stats">
+            <Stat label="Opening cash · शुरुआती" value={money(opening)} />
+            <Stat label="Total in · आया" value={money(totalIn)} tone="green" hint={`${ins.length} entries`} />
+            <Stat label="Total out · गया" value={money(totalOut)} tone="red" hint={`${outs.length} entries`} />
+            <Stat label="Closing cash · बाकी" value={money(closing)} tone="gold" />
+          </div>
+
+          <Card title="Summary of the day">
+            <div className="chips">
+              {Object.entries(LEDGER_KINDS).map(([k, v]) => (
+                <div key={k} className={`chip ${byKind[k] ? '' : 'chip-dim'}`}>
+                  <span>{v.label}</span>
+                  <Amount value={byKind[k] || 0} dir={v.dir} />
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <div className="grid-2">
+            <Card title={`Money in · जमा (${ins.length})`} flush actions={<strong className="amt-in">{money(totalIn)}</strong>}>
+              <LedgerTable rows={ins} onDelete={busy ? () => {} : onDelete} />
+            </Card>
+            <Card title={`Money out · नाम (${outs.length})`} flush actions={<strong className="amt-out">{money(totalOut)}</strong>}>
+              <LedgerTable rows={outs} onDelete={busy ? () => {} : onDelete} />
+            </Card>
+          </div>
+
+          <div className="grid-2">
+            <Card title={`New loans this day (${data.newLoans.length})`} flush>
+              {data.newLoans.length === 0 ? (
+                <Empty>No new loan on this day.</Empty>
+              ) : (
+                <table className="table">
+                  <thead>
+                    <tr><th>Loan</th><th className="num">Principal</th><th className="num">Interest cut</th><th className="num">Advance</th><th className="num">Net</th></tr>
+                  </thead>
+                  <tbody>
+                    {data.newLoans.map((l) => (
+                      <tr key={l.id}>
+                        <td><Link to={`/loans/${l.id}`}>#{l.loan_no} {l.borrower_name}</Link></td>
+                        <td className="num">{money(l.principal)}</td>
+                        <td className="num amt-in">{money(l.interest_amount)}</td>
+                        <td className="num">{money(l.advance_amount)}</td>
+                        <td className="num">{money(l.net_disbursable)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td>Total</td>
+                      <td className="num">{money(sum(data.newLoans, 'principal'))}</td>
+                      <td className="num">{money(sum(data.newLoans, 'interest_amount'))}</td>
+                      <td className="num">{money(sum(data.newLoans, 'advance_amount'))}</td>
+                      <td className="num">{money(sum(data.newLoans, 'net_disbursable'))}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </Card>
+
+            <Card title={`Did not pay this day · नहीं दिया (${data.missed.length})`} flush>
+              {data.missed.length === 0 ? (
+                <Empty>Everyone paid. 🎉</Empty>
+              ) : (
+                <table className="table">
+                  <thead>
+                    <tr><th>Borrower</th><th className="num">Daily</th><th className="num">Overdue (today)</th></tr>
+                  </thead>
+                  <tbody>
+                    {data.missed.map((l) => (
+                      <tr key={l.id}>
+                        <td>
+                          <Link to={`/loans/${l.id}`}>{l.borrower_name}</Link>
+                          <div className="muted small">#{l.loan_no} · {l.borrower_phone || '—'}</div>
+                        </td>
+                        <td className="num">{money(l.daily_installment)}</td>
+                        <td className="num amt-out">{money(l.overdue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
