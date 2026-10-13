@@ -3,8 +3,10 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../../components/Toast.jsx';
 import { Card, Empty, ErrorBox, ExportButton, Field, Loading, Modal, ModeSelect, PageHeader, PrintButton, Progress, Stat, StatusBadge } from '../../components/ui.jsx';
 import KhataCalendar from '../../components/KhataCalendar.jsx';
+import WhatsAppButton from '../../components/WhatsAppButton.jsx';
+import { useSettings } from '../../context/SettingsContext.jsx';
 import {
-  addDays, daysText, fmtDate, fmtDateLong, fmtDateShort, modeLabel, money, round2, sum, toNum, todayStr, whatsappLink,
+  addDays, daysText, fmtDate, fmtDateLong, fmtDateShort, modeLabel, money, round2, sum, toNum, todayStr,
 } from '../../lib/format.js';
 import { buildLoanCalendar } from '../../lib/loanMath.js';
 import { useAction, useLoad } from '../../lib/hooks.js';
@@ -84,6 +86,53 @@ function EntryModal({ title, table, loanId, defaultAmount, max, daily, collected
   );
 }
 
+function PenaltyModal({ kind, loanId, due, borrower, onClose }) {
+  const toast = useToast();
+  const [busy, run] = useAction(toast);
+  const [f, setF] = useState({ paid_on: todayStr(), amount: due > 0 ? String(due) : '', mode: 'cash', note: '' });
+  const paid = kind === 'paid';
+
+  async function submit(e) {
+    e.preventDefault();
+    const amount = round2(f.amount);
+    if (amount <= 0) return toast.error('Enter an amount.');
+    if (f.paid_on > todayStr()) return toast.error('Date cannot be in the future · aage ki tareekh nahi');
+    if (amount > due + 0.001 && !window.confirm(`This is more than the penalty due (${money(due)}). Save anyway?`)) return;
+    const ok = await run(
+      () =>
+        q(
+          supabase.from('loan_penalty_entries').insert({
+            loan_id: loanId, kind, paid_on: f.paid_on, amount, mode: paid ? f.mode : 'waiver', note: f.note.trim() || null,
+          }),
+        ),
+      paid ? `Penalty ${money(amount)} received` : `Penalty ${money(amount)} waived`,
+    );
+    if (ok) onClose();
+  }
+
+  return (
+    <Modal title={`${paid ? 'Take penalty · जुर्माना लिया' : 'Waive penalty · माफ़ करें'} — ${borrower}`} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="form-grid">
+          <Field label={paid ? 'Date money came' : 'Date'}>
+            <input type="date" max={todayStr()} value={f.paid_on} onChange={(e) => setF({ ...f, paid_on: e.target.value })} />
+          </Field>
+          <Field label="Amount (₹)" hint={`Penalty due: ${money(due)}`}>
+            <input type="number" min="0" step="any" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} autoFocus />
+          </Field>
+          {paid && <Field label="Mode"><ModeSelect value={f.mode} onChange={(v) => setF({ ...f, mode: v })} /></Field>}
+          <Field label="Note"><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder={paid ? '' : 'Reason (optional)'} /></Field>
+        </div>
+        {!paid && <p className="muted small">A waiver is not cash — it only lowers the penalty due.</p>}
+        <div className="form-actions">
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 function TxnTable({ rows, onDelete, empty, daily }) {
   if (!rows.length) return <Empty>{empty}</Empty>;
   return (
@@ -124,34 +173,38 @@ export default function LoanDetail() {
   const [busy, run] = useAction(toast);
   const [modal, setModal] = useState(null);
   const today = todayStr();
+  const { settings } = useSettings();
 
   const { data, loading, error } = useLoad(async () => {
-    const [loan, disb, reps, link, renewedInto] = await Promise.all([
+    const [loan, disb, reps, link, renewedInto, penalties] = await Promise.all([
       q(supabase.from('loan_summary').select('*').eq('id', id).single()),
       q(supabase.from('loan_disbursements').select('*').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
       q(supabase.from('loan_repayments').select('*').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
       q(supabase.from('loans').select('renewed_from, from:renewed_from(loan_no)').eq('id', id).single()),
       q(supabase.from('loans').select('id,loan_no,loan_date').eq('renewed_from', id)),
+      q(supabase.from('loan_penalty_entries').select('*').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
     ]);
-    return { loan, disb, reps, renewedFrom: link.renewed_from ? { id: link.renewed_from, loan_no: link.from?.loan_no } : null, renewedInto };
+    return { loan, disb, reps, renewedFrom: link.renewed_from ? { id: link.renewed_from, loan_no: link.from?.loan_no } : null, renewedInto, penalties };
   }, [id]);
 
   if (loading && !data) return <Loading />;
   if (!data) return <ErrorBox error={error || new Error('Loan not found')} />;
 
-  const { loan: l, disb, reps, renewedFrom, renewedInto } = data;
+  const { loan: l, disb, reps, renewedFrom, renewedInto, penalties } = data;
   const renewAdjusted = sum(reps.filter((r) => r.mode === 'renewal'), 'amount');
   const isRunning = l.status === 'active' || l.status === 'defaulted';
   const cal = buildLoanCalendar(l, reps, today);
   const missedDays = cal.counts.missed;
   const pendingDisb = toNum(l.pending_disbursement);
   const outstanding = toNum(l.outstanding);
-  const wa = whatsappLink(
-    l.borrower_phone,
-    `Namaste ${l.borrower_name}, Loan #${l.loan_no}: kul baaki ${money(outstanding)}` +
-      (toNum(l.overdue) > 0 ? `, jismein ${money(l.overdue)} bakaya hai` : '') +
-      `. Roz ki kisht ${money(l.daily_installment)}.`,
-  );
+  const penaltyDue = toNum(l.penalty_due);
+  const showPenalty = settings?.penalty_enabled || penalties.length > 0 || toNum(l.penalty_charged) > 0;
+
+  async function togglePenaltyOff() {
+    const off = !l.penalty_off;
+    if (!window.confirm(off ? 'Stop penalty for this loan? Penalty not yet received will not be shown.' : 'Start charging penalty on this loan again?')) return;
+    await run(() => q(supabase.from('loans').update({ penalty_off: off }).eq('id', id)), off ? 'No penalty on this loan' : 'Penalty on for this loan');
+  }
 
   async function del(table, row) {
     if (!window.confirm(`Delete ${money(row.amount)} entry of ${fmtDate(row.paid_on)}?`)) return;
@@ -196,7 +249,7 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
         {(l.status === 'active' || l.status === 'defaulted') && (
           <button className="btn btn-primary btn-lg" onClick={() => setModal('rep')}>₹ Take payment · पैसे लिए</button>
         )}
-        {wa && <a className="btn btn-wa" href={wa} target="_blank" rel="noreferrer">WhatsApp</a>}
+        <WhatsAppButton loan={l} />
         {isRunning && (
           <Link className="btn" to={`/loans/new?renew=${id}`}>🔁 Renew · नया loan</Link>
         )}
@@ -238,7 +291,7 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
       <div className="stats">
         <Stat label="Balance · बाकी" value={money(l.status === 'renewed' ? 0 : outstanding)} tone="gold" hint={l.status === 'renewed' ? 'Renewed — moved to new loan' : `${l.installments_left} installments left`} />
         <Stat label="Collected · वसूल" value={money(l.collected_total)} tone="green" hint={`incl. ${money(l.advance_amount)} advance`} />
-        <Stat label="Overdue · बकाया" value={money(l.overdue)} tone={toNum(l.overdue) > 0 ? 'red' : undefined} hint={`${missedDays} missed day(s)`} />
+        <Stat label="Overdue · बकाया" value={money(l.overdue)} tone={toNum(l.overdue) > 0 ? 'red' : undefined} hint={`${missedDays} missed day(s)` + (penaltyDue > 0 ? ` · + ${money(penaltyDue)} penalty` : '')} />
         <Stat label="To give · देना बाकी" value={money(pendingDisb)} tone={pendingDisb > 0 ? 'red' : undefined} hint={`Given ${money(l.disbursed)} of ${money(l.net_disbursable)}`} />
       </div>
 
@@ -288,6 +341,60 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
           <TxnTable rows={disb} onDelete={(r) => del('loan_disbursements', r)} empty="Nothing given yet." />
         </Card>
       </div>
+
+      {showPenalty && (
+        <Card
+          title="Penalty · जुर्माना"
+          actions={
+            <>
+              <button className="btn btn-primary btn-sm" disabled={penaltyDue <= 0} onClick={() => setModal('pen-paid')}>₹ Take penalty</button>
+              <button className="btn btn-sm" disabled={penaltyDue <= 0} onClick={() => setModal('pen-waived')}>Waive · माफ़</button>
+              <button className="btn btn-sm" disabled={busy} onClick={togglePenaltyOff}>
+                {l.penalty_off ? 'Turn penalty on' : 'No penalty for this loan'}
+              </button>
+            </>
+          }
+          flush
+        >
+          <div className="card-sub muted small">
+            {l.penalty_off ? (
+              <>Penalty is <strong>off</strong> for this loan.</>
+            ) : !settings?.penalty_enabled ? (
+              <>Penalty is off in <Link to="/settings">Settings</Link>.</>
+            ) : (
+              <>
+                {money(l.penalty_rate)} per day behind · {l.penalty_days} day(s) = <strong>{money(l.penalty_charged)}</strong>
+                {' '}· Received <strong>{money(l.penalty_paid)}</strong>
+                {toNum(l.penalty_waived) > 0 && <> · Waived <strong>{money(l.penalty_waived)}</strong></>}
+                {' '}· Due <strong className={penaltyDue > 0 ? 'amt-out' : ''}>{money(penaltyDue)}</strong>
+              </>
+            )}
+          </div>
+          {penalties.length > 0 && (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr><th>Date</th><th>Type</th><th className="num">Amount</th><th>Mode</th><th>Note</th><th /></tr>
+                </thead>
+                <tbody>
+                  {penalties.map((r) => (
+                    <tr key={r.id}>
+                      <td className="nowrap">{fmtDate(r.paid_on)}</td>
+                      <td>{r.kind === 'paid' ? 'Received' : 'Waived (माफ़)'}</td>
+                      <td className="num"><strong>{money(r.amount)}</strong></td>
+                      <td>{r.kind === 'paid' ? modeLabel(r.mode) : '—'}</td>
+                      <td className="muted">{r.note || ''}</td>
+                      <td className="num">
+                        <button className="icon-btn danger" title="Delete" onClick={() => del('loan_penalty_entries', r)}>🗑</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
 
       <div className="grid-2">
         <Card title="Loan terms · शर्तें">
@@ -341,6 +448,15 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
           loanId={id}
           defaultAmount={pendingDisb > 0 ? pendingDisb : ''}
           max={pendingDisb}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {(modal === 'pen-paid' || modal === 'pen-waived') && (
+        <PenaltyModal
+          kind={modal === 'pen-paid' ? 'paid' : 'waived'}
+          loanId={id}
+          due={penaltyDue}
+          borrower={l.borrower_name}
           onClose={() => setModal(null)}
         />
       )}

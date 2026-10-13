@@ -60,6 +60,7 @@ const KIND_TABLE = {
   employee_advance: 'employee_advances',
   capital_in: 'cash_entries',
   capital_out: 'cash_entries',
+  penalty: 'loan_penalty_entries',
 };
 
 export async function deleteLedgerEntry(row) {

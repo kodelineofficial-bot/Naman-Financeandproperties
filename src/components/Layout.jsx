@@ -26,6 +26,7 @@ const NAV = [
   { to: '/employees', label: 'Employees', hi: 'कर्मचारी', icon: '♟' },
   { to: '/salary', label: 'Salary Report', hi: 'तनख्वाह', icon: '✓' },
   { section: '' },
+  { to: '/templates', label: 'WhatsApp Templates', hi: 'मैसेज टेम्पलेट', icon: '✉' },
   { to: '/settings', label: 'Settings', hi: 'सेटिंग', icon: '⚙' },
 ];
 

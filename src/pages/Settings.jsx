@@ -3,7 +3,8 @@ import { useToast } from '../components/Toast.jsx';
 import { Card, Field, Loading, PageHeader } from '../components/ui.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
-import { money, round2, toNum } from '../lib/format.js';
+import { Link } from 'react-router-dom';
+import { fmtDateLong, money, round2, toNum, todayStr } from '../lib/format.js';
 import { deriveLoan } from '../lib/loanMath.js';
 import { useAction } from '../lib/hooks.js';
 import { q, supabase } from '../lib/supabase.js';
@@ -29,6 +30,10 @@ export default function Settings() {
         default_daily_per_10k: String(settings.default_daily_per_10k ?? 150),
         default_advance_days: String(settings.default_advance_days ?? 10),
         attendance_cuts_salary: settings.attendance_cuts_salary ?? true,
+        penalty_enabled: !!settings.penalty_enabled,
+        penalty_per_day: String(settings.penalty_per_day ?? 0),
+        penalty_grace_days: String(settings.penalty_grace_days ?? 0),
+        penalty_from: settings.penalty_from || todayStr(),
       });
     }
   }, [settings, f]);
@@ -65,6 +70,10 @@ export default function Settings() {
               default_daily_per_10k: toNum(f.default_daily_per_10k),
               default_advance_days: Math.max(0, Math.round(toNum(f.default_advance_days))),
               attendance_cuts_salary: !!f.attendance_cuts_salary,
+              penalty_enabled: !!f.penalty_enabled,
+              penalty_per_day: Math.max(0, round2(f.penalty_per_day)),
+              penalty_grace_days: Math.max(0, Math.round(toNum(f.penalty_grace_days))),
+              penalty_from: f.penalty_from || todayStr(),
             })
             .eq('id', 1),
         ),
@@ -128,6 +137,52 @@ export default function Settings() {
           <p className="muted small">
             When on: 1 absent day = salary ÷ days in month (₹15,000 in a 30-day month = ₹500 per day). Half day = half of that.
             “Leave” (paid leave) and days not marked are not cut.
+          </p>
+        </Card>
+        <Card title="Late payment penalty · जुर्माना">
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={!!f.penalty_enabled}
+              onChange={(e) =>
+                setF({
+                  ...f,
+                  penalty_enabled: e.target.checked,
+                  // switching on: count from today, so old missed days are not charged
+                  penalty_from: e.target.checked && !settings.penalty_enabled ? todayStr() : f.penalty_from,
+                })
+              }
+            />
+            Charge penalty when the daily installment is not paid · किस्त न देने पर जुर्माना लगाएं
+          </label>
+          {f.penalty_enabled && (
+            <div className="form-grid three">
+              <Field label="Penalty per day (₹)" hint="For every day the borrower is behind">
+                <input type="number" min="0" step="any" value={f.penalty_per_day} onChange={set('penalty_per_day')} />
+              </Field>
+              <Field label="Free days (grace)" hint="0 = from the first missed day">
+                <input type="number" min="0" step="1" value={f.penalty_grace_days} onChange={set('penalty_grace_days')} />
+              </Field>
+              <Field label="Count penalty from" hint="Missed days before this date are not charged">
+                <input type="date" max={todayStr()} value={f.penalty_from} onChange={set('penalty_from')} />
+              </Field>
+            </div>
+          )}
+          <p className="muted small">
+            {f.penalty_enabled ? (
+              <>
+                Example: daily ₹150, penalty {money(f.penalty_per_day)}/day, {toNum(f.penalty_grace_days)} free day(s). A borrower who is{' '}
+                {toNum(f.penalty_grace_days) > 0 ? `more than ${toNum(f.penalty_grace_days)} installment(s) behind` : 'behind (even partly)'} at the end of a day gets{' '}
+                {money(f.penalty_per_day)} added for that day. 3 such days = {money(3 * toNum(f.penalty_per_day))}. Counted from{' '}
+                {fmtDateLong(f.penalty_from)}; today is never counted. Penalty is kept separate from the loan balance — take it or
+                waive it (माफ़) from the loan page. A single loan can be kept penalty-free from its page.
+              </>
+            ) : (
+              'Off — no penalty is charged on any loan.'
+            )}
+          </p>
+          <p className="small">
+            Messages for borrowers: <Link to="/templates">WhatsApp Templates →</Link>
           </p>
         </Card>
         <div className="form-actions left">

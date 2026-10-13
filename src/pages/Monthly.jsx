@@ -41,6 +41,7 @@ export default function Monthly() {
         total_in: toNum(c.total_in),
         total_out: toNum(c.total_out),
         collections: toNum(c.collections),
+        penalties: toNum(c.penalties),
         disbursements: toNum(c.disbursements),
         expenses: toNum(c.expenses),
         salaries: toNum(c.salaries),
@@ -92,6 +93,7 @@ export default function Monthly() {
               { key: 'month', label: 'Month', value: (r) => fmtMonth(r.month) },
               { key: 'opening', label: 'Opening' },
               { key: 'collections', label: 'Collections' },
+              { key: 'penalties', label: 'Penalty' },
               { key: 'capital_in', label: 'Cash in' },
               { key: 'disbursements', label: 'Loans given' },
               { key: 'expenses', label: 'Expenses' },
@@ -117,7 +119,7 @@ export default function Monthly() {
       ) : (
         <>
           <div className="stats">
-            <Stat label={`Collections ${year}`} value={money(sum(months, 'collections'))} tone="green" />
+            <Stat label={`Collections ${year}`} value={money(sum(months, 'collections'))} tone="green" hint={sum(months, 'penalties') > 0 ? `+ ${money(sum(months, 'penalties'))} penalty` : undefined} />
             <Stat label={`Loans given ${year}`} value={money(sum(months, 'disbursements'))} hint={`${sum(months, 'loans_count')} new loans`} />
             <Stat label="Expenses + salary" value={money(sum(months, (m) => m.expenses + m.salaries + m.employee_advances))} tone="red" />
             <Stat label="Interest + extra booked" value={money(sum(months, businessIncome))} tone="gold" hint="Income from loans issued this year" />
@@ -212,6 +214,7 @@ export default function Monthly() {
                 <div className="kv-list">
                   <div><span>Opening cash</span><strong>{money(sel.opening)}</strong></div>
                   <div><span>Collections</span><Amount value={sel.collections} dir="in" /></div>
+                  {sel.penalties > 0 && <div><span>Penalty received</span><Amount value={sel.penalties} dir="in" /></div>}
                   <div><span>Cash added</span><Amount value={sel.capital_in} dir="in" /></div>
                   <div><span>Loans given</span><Amount value={sel.disbursements} dir="out" /></div>
                   <div><span>Expenses</span><Amount value={sel.expenses} dir="out" /></div>

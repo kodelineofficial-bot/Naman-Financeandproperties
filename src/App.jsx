@@ -23,6 +23,7 @@ import EmployeeDetail from './pages/employees/EmployeeDetail.jsx';
 import SalaryReport from './pages/employees/SalaryReport.jsx';
 import Attendance from './pages/employees/Attendance.jsx';
 import Settings from './pages/Settings.jsx';
+import Templates from './pages/Templates.jsx';
 
 function SetupNotice() {
   return (
@@ -99,6 +100,7 @@ export default function App() {
         <Route path="salary" element={<SalaryReport />} />
         <Route path="attendance" element={<Attendance />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="templates" element={<Templates />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

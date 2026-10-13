@@ -10,6 +10,7 @@ import { q, supabase } from '../lib/supabase.js';
 
 const COLS = [
   { key: 'collections', label: 'Collection', dir: 'in' },
+  { key: 'penalties', label: 'Penalty', dir: 'in' },
   { key: 'capital_in', label: 'Cash in', dir: 'in' },
   { key: 'disbursements', label: 'Loan given', dir: 'out' },
   { key: 'expenses', label: 'Expenses', dir: 'out' },

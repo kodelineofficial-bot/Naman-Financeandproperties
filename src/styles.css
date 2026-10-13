@@ -466,3 +466,16 @@ button.hbar:hover, .hbar.active { background: #f6efe1; }
 .logo { display: block; flex-shrink: 0; border-radius: 10px; }
 .logo-big { display: flex; justify-content: center; margin: 0 auto 10px; }
 .logo-big .logo { border-radius: 18px; box-shadow: 0 6px 18px rgba(86, 20, 20, 0.25); }
+
+/* ---------- WhatsApp templates ---------- */
+.wa-preview {
+  white-space: pre-wrap; word-break: break-word; background: #e7f8ee; border: 1px solid #c3ead3;
+  border-radius: 10px 10px 10px 2px; padding: 10px 12px; font-size: 14.5px; line-height: 1.45; min-height: 60px;
+}
+.tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.tag-btn {
+  border: 1px solid var(--line-strong); background: #fff; border-radius: 999px; padding: 4px 10px;
+  font-size: 13px; cursor: pointer; color: var(--ink);
+}
+.tag-btn:hover { border-color: var(--gold); background: #fcf6ea; }
+.pen-note { color: var(--red); font-size: 12.5px; }

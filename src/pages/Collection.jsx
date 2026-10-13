@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useToast } from '../components/Toast.jsx';
+import WhatsAppButton from '../components/WhatsAppButton.jsx';
 import { Card, Empty, ErrorBox, ExportButton, Loading, ModeSelect, PageHeader, PrintButton, SearchInput, Stat, Tabs } from '../components/ui.jsx';
 import {
-  addDays, daysBetween, daysText, fmtDateFull, fmtDateLong, money, round2, sum, toNum, todayStr, whatsappLink,
+  addDays, daysBetween, daysText, fmtDateFull, fmtDateLong, money, round2, sum, toNum, todayStr,
 } from '../lib/format.js';
 import { useAction, useLoad } from '../lib/hooks.js';
 import { q, supabase } from '../lib/supabase.js';
@@ -23,7 +24,14 @@ export default function Collection() {
   const [modes, setModes] = useState({});
   const [busy, run] = useAction(toast);
 
-  const { data, loading, error } = useLoad(() => q(supabase.rpc('collection_sheet', { p_date: date })), [date]);
+  const { data, loading, error } = useLoad(async () => {
+    const [sheet, pen] = await Promise.all([
+      q(supabase.rpc('collection_sheet', { p_date: date })),
+      q(supabase.from('loan_penalty').select('loan_id,penalty_due,penalty_days,penalty_rate').gt('penalty_due', 0)),
+    ]);
+    const byLoan = Object.fromEntries(pen.map((p) => [p.loan_id, p]));
+    return sheet.map((l) => ({ ...l, ...(byLoan[l.id] && { penalty_due: byLoan[l.id].penalty_due, penalty_days: byLoan[l.id].penalty_days, penalty_rate: byLoan[l.id].penalty_rate }) }));
+  }, [date]);
 
   const all = useMemo(
     () =>
@@ -119,7 +127,7 @@ export default function Collection() {
             { label: 'Daily', key: 'daily' },
             { label: 'Status', value: (l) => ({ paid: 'Paid', advance: 'Advance', pending: 'Not paid', done: 'Fully paid' })[l.state] },
             { label: 'Paid this day', key: 'paidToday' }, { label: 'Paid till', key: 'paid_till' },
-            { label: 'Behind (bakaya)', key: 'short' }, { label: 'Balance', key: 'balance' },
+            { label: 'Behind (bakaya)', key: 'short' }, { label: 'Penalty due', value: (l) => toNum(l.penalty_due) }, { label: 'Balance', key: 'balance' },
           ]}
         />
         <PrintButton />
@@ -178,11 +186,6 @@ export default function Collection() {
               </thead>
               <tbody>
                 {rows.map((l) => {
-                  const wa = whatsappLink(
-                    l.borrower_phone,
-                    `Namaste ${l.borrower_name}, aaj ki kisht ${money(l.daily)} baaki hai.` +
-                      (l.short > 0 ? ` Kul bakaya: ${money(l.short)}.` : ''),
-                  );
                   const amt = amountFor(l);
                   return (
                     <tr key={l.id} className={l.state === 'paid' || l.state === 'advance' ? 'row-done' : ''}>
@@ -204,7 +207,10 @@ export default function Collection() {
                           <div className="muted small">Paid till {fmtDateLong(l.paid_till)}</div>
                         )}
                       </td>
-                      <td className={`num ${l.short > 0 ? 'amt-out' : 'muted'}`}>{money(l.short)}</td>
+                      <td className={`num ${l.short > 0 ? 'amt-out' : 'muted'}`}>
+                        {money(l.short)}
+                        {toNum(l.penalty_due) > 0 && <div className="pen-note">+ {money(l.penalty_due)} penalty</div>}
+                      </td>
                       <td className="num">{money(l.balance)}</td>
                       <td>
                         <div className="amount-cell">
@@ -231,10 +237,8 @@ export default function Collection() {
                         <button className="btn btn-primary" disabled={busy || !(toNum(amt) > 0)} onClick={() => saveRows([l])}>
                           {l.state === 'pending' ? 'Save' : '+ Add'}
                         </button>
-                        {wa && l.state === 'pending' && (
-                          <a className="btn btn-wa ml" href={wa} target="_blank" rel="noreferrer" title="Send WhatsApp reminder">
-                            WhatsApp
-                          </a>
+                        {l.state === 'pending' && (
+                          <WhatsAppButton className="ml" loan={l} overrides={{ overdue: l.short, balance: l.balance }} />
                         )}
                       </td>
                     </tr>

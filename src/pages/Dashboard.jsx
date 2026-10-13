@@ -1,8 +1,9 @@
 import { Link, useNavigate } from 'react-router-dom';
+import WhatsAppButton from '../components/WhatsAppButton.jsx';
 import { Amount, Card, Empty, ErrorBox, ExportButton, Loading, PageHeader, PrintButton, Stat } from '../components/ui.jsx';
 import { getBalanceAsOf } from '../lib/api.js';
 import {
-  LEDGER_KINDS, fmtDateFull, fmtDateShort, fmtMonth, money, monthStart, sum, toNum, todayStr, whatsappLink,
+  LEDGER_KINDS, fmtDateFull, fmtDateShort, fmtMonth, money, monthStart, sum, toNum, todayStr,
 } from '../lib/format.js';
 import { useLoad } from '../lib/hooks.js';
 import { q, supabase } from '../lib/supabase.js';
@@ -20,7 +21,7 @@ export default function Dashboard() {
         supabase
           .from('loan_summary')
           .select(
-            'id,loan_no,borrower_name,borrower_phone,daily_installment,outstanding,overdue,pending_disbursement,paid_today,status,collection_start_date,last_paid_on,principal,paid_till',
+            'id,loan_no,borrower_name,borrower_phone,daily_installment,outstanding,overdue,pending_disbursement,paid_today,status,collection_start_date,last_paid_on,principal,paid_till,expected_end_date,penalty_due,penalty_days,penalty_rate',
           )
           .in('status', ['active', 'defaulted']),
       ),
@@ -58,6 +59,7 @@ export default function Dashboard() {
       dueCount: dueToday.length,
       outstanding: sum(loans, 'outstanding'),
       overdue: sum(loans, 'overdue'),
+      penaltyDue: sum(loans, 'penalty_due'),
       pendingDisb: sum(loans, 'pending_disbursement'),
       principalOut: sum(loans, 'principal'),
       salaryDue: sum(salary.filter((s) => toNum(s.balance) > 0), 'balance'),
@@ -91,7 +93,7 @@ export default function Dashboard() {
             { label: 'Loan #', key: 'loan_no' }, { label: 'Name', key: 'borrower_name' }, { label: 'Phone', key: 'borrower_phone' },
             { label: 'Principal', key: 'principal' }, { label: 'Daily', key: 'daily_installment' },
             { label: 'Paid today', key: 'paid_today' }, { label: 'Paid till', key: 'paid_till' },
-            { label: 'Balance', key: 'outstanding' }, { label: 'Overdue', key: 'overdue' }, { label: 'Status', key: 'status' },
+            { label: 'Balance', key: 'outstanding' }, { label: 'Overdue', key: 'overdue' }, { label: 'Penalty due', key: 'penalty_due' }, { label: 'Status', key: 'status' },
           ]}
         />
         <PrintButton />
@@ -101,7 +103,7 @@ export default function Dashboard() {
       <div className="stats">
         <Stat label="Cash in hand · रोकड़" value={money(d.balance)} tone={d.balance < 0 ? 'red' : 'gold'} hint="Opening + all in − all out" onClick={() => navigate('/daybook')} />
         <Stat label="Market outstanding · बाज़ार में" value={money(d.outstanding)} hint={`${d.loans.length} open loans`} onClick={() => navigate('/loans')} />
-        <Stat label="Overdue · बकाया" value={money(d.overdue)} tone={d.overdue > 0 ? 'red' : 'green'} hint="Behind daily schedule" onClick={() => navigate('/loans?sort=overdue')} />
+        <Stat label="Overdue · बकाया" value={money(d.overdue)} tone={d.overdue > 0 ? 'red' : 'green'} hint={d.penaltyDue > 0 ? `+ ${money(d.penaltyDue)} penalty due` : 'Behind daily schedule'} onClick={() => navigate('/loans?sort=overdue')} />
         <Stat label="To give · देना बाकी" value={money(d.pendingDisb)} hint="Loan amount not yet handed over" />
       </div>
 
@@ -155,20 +157,19 @@ export default function Dashboard() {
               </thead>
               <tbody>
                 {d.topOverdue.map((l) => {
-                  const wa = whatsappLink(
-                    l.borrower_phone,
-                    `Namaste ${l.borrower_name}, aapki kisht ka ${money(l.overdue)} baaki hai. Kripya jaldi jama karein.`,
-                  );
                   return (
                     <tr key={l.id} className="clickable" onClick={() => navigate(`/loans/${l.id}`)}>
                       <td>
                         <strong>{l.borrower_name}</strong>
                         <div className="muted small">#{l.loan_no} · {l.borrower_phone || 'no phone'}</div>
                       </td>
-                      <td className="num amt-out">{money(l.overdue)}</td>
+                      <td className="num amt-out">
+                        {money(l.overdue)}
+                        {toNum(l.penalty_due) > 0 && <div className="pen-note">+ {money(l.penalty_due)} penalty</div>}
+                      </td>
                       <td>{fmtDateShort(l.last_paid_on)}</td>
                       <td onClick={(e) => e.stopPropagation()}>
-                        {wa && <a className="btn btn-sm btn-wa" href={wa} target="_blank" rel="noreferrer">WhatsApp</a>}
+                        <WhatsAppButton className="btn-sm" loan={l} />
                       </td>
                     </tr>
                   );

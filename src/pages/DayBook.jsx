@@ -9,6 +9,7 @@ import { q, supabase } from '../lib/supabase.js';
 const LINK_FOR = {
   disbursement: (r) => `/loans/${r.ref_id}`,
   collection: (r) => `/loans/${r.ref_id}`,
+  penalty: (r) => `/loans/${r.ref_id}`,
   salary: (r) => `/employees/${r.ref_id}`,
   employee_advance: (r) => `/employees/${r.ref_id}`,
 };

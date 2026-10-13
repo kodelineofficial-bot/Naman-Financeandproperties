@@ -24,7 +24,8 @@ An admin panel for a daily-collection money-lending business (उधारी / 
 | **Cash In / Out** (पूंजी) | When the owner adds capital or takes money out. This keeps the cash balance correct. |
 | **Employees** (कर्मचारी) | Staff with their fixed salary. Record **salary advances or loans** (and choose which month's salary they come out of) and salary payments. Month-wise statement for each person. |
 | **Salary Report** | Month end: salary − advances − already paid = **what is still owed**. Pay with one click. |
-| **Settings** | Business name, opening cash balance, and the default loan terms (all can be changed per loan). |
+| **Settings** | Business name, opening cash balance, the default loan terms (all can be changed per loan), and the **late payment penalty** rule (₹ per day, free days, count from date). |
+| **WhatsApp Templates** (मैसेज टेम्पलेट) | Create / edit the messages sent from every WhatsApp button. Placeholders like `{name}`, `{overdue}`, `{penalty}`, `{total_due}` are filled per borrower. Four ready-made English templates (reminder, penalty notice, final notice, balance statement). The WhatsApp button opens a picker, then WhatsApp with the text ready — just press Send. |
 
 ## How the loan maths works (default values; every value can be edited per loan)
 
@@ -43,6 +44,7 @@ Profit = 400 interest + 2,000 extra = 2,400
 ```
 
 * **Overdue** = (advance + days since collection started × daily) − collected so far.
+* **Penalty (जुर्माना)**: when on, every past day the loan ends more than *free days* × daily behind schedule adds ₹ *per day*. Today is never counted. Penalty is separate from the loan balance; take it (shows in cash book as *Penalty*) or waive it (माफ़) on the loan page, or switch it off for one loan.
 * A loan **closes on its own** when the full amount is collected, and **re-opens** if a collection is deleted.
 * If you type **Duration (days)** yourself, the total becomes daily × days. If you type **Total**, the days are worked out from it.
 
@@ -63,7 +65,7 @@ When you edit or delete any entry, every report changes with it. Supabase Realti
 
 ### 1. Supabase
 1. Create a project at https://supabase.com and choose region **Mumbai (ap-south-1)**.
-2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql`, `002_security_hardening.sql`, `003_multiday_and_attendance.sql`, `004_loan_renewal.sql`, `005_no_future_money_dates.sql`).
+2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql`, `002_security_hardening.sql`, `003_multiday_and_attendance.sql`, `004_loan_renewal.sql`, `005_no_future_money_dates.sql`, `006_penalty_and_whatsapp_templates.sql`).
 3. *(Optional demo data)* Run `supabase/seed.sql`.
 4. **Authentication → Users → Add user**: enter the owner's email and password, and tick *Auto confirm*.
 5. Make that user an admin (SQL Editor):
