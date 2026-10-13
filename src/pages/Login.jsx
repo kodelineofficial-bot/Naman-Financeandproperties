@@ -32,7 +32,7 @@ export default function Login() {
       <form className="auth-card" onSubmit={submit}>
         <div className="auth-brand">
           <div className="brand-mark big">₹</div>
-          <h1>Bahi Khata</h1>
+          <h1>Naman - Finance &amp; Properties</h1>
           <p className="muted">उधारी · वसूली · हिसाब — Admin Login</p>
         </div>
         {error && <div className="alert alert-error">{error}</div>}

@@ -55,7 +55,7 @@ export default function Settings() {
           supabase
             .from('settings')
             .update({
-              business_name: f.business_name.trim() || 'Bahi Khata',
+              business_name: f.business_name.trim() || 'Naman - Finance & Properties',
               owner_name: f.owner_name.trim() || null,
               phone: f.phone.trim() || null,
               address: f.address.trim() || null,

@@ -64,8 +64,8 @@ export default function Layout() {
         <div className="brand">
           <div className="brand-mark">₹</div>
           <div>
-            <div className="brand-name">{settings?.business_name || 'Bahi Khata'}</div>
-            <div className="brand-sub">बही खाता · Admin</div>
+            <div className="brand-name">{settings?.business_name || 'Naman - Finance & Properties'}</div>
+            <div className="brand-sub">Admin Panel</div>
           </div>
         </div>
         <nav>
