@@ -34,7 +34,7 @@ export default function Login() {
         <div className="auth-brand">
           <div className="logo-big"><Logo size={72} /></div>
           <h1>Naman - Finance &amp; Properties</h1>
-          <p className="muted">उधारी · किस्त · हिसाब — Admin Login</p>
+          <p className="muted">Admin Panel</p>
         </div>
         {error && <div className="alert alert-error">{error}</div>}
         <label className="field">
