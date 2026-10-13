@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Card, Empty, ErrorBox, Loading, PageHeader, SearchInput, Stat, Tabs } from '../../components/ui.jsx';
+import { Card, Empty, ErrorBox, ExportButton, Loading, PageHeader, PrintButton, SearchInput, Stat, Tabs } from '../../components/ui.jsx';
 import { fmtDate, fmtMonth, money, monthStart, sum, toNum, todayStr } from '../../lib/format.js';
 import { useLoad } from '../../lib/hooks.js';
 import { q, supabase } from '../../lib/supabase.js';
@@ -40,6 +40,19 @@ export default function Employees() {
         <Link className="btn" to="/attendance">☑ Attendance · हाज़िरी</Link>
         <Link className="btn" to="/salary">Salary report</Link>
         <button className="btn btn-primary" onClick={() => setAdding(true)}>+ Add employee</button>
+        <ExportButton
+          filename={`employees-${month.slice(0, 7)}.csv`}
+          rows={rows}
+          columns={[
+            { label: 'Name', key: 'name' }, { label: 'Job', key: 'designation' }, { label: 'Phone', key: 'phone' },
+            { label: 'Joined', key: 'joining_date' }, { label: 'Working', value: (e) => (e.is_active ? 'Yes' : 'No') },
+            { label: 'Monthly salary', key: 'monthly_salary' },
+            { label: 'Present days', value: (e) => e.month?.present_days ?? '' }, { label: 'Absent days', value: (e) => e.month?.absent_days ?? '' },
+            { label: 'Absent cut', value: (e) => e.month?.absent_cut ?? '' }, { label: 'Advances', value: (e) => e.month?.advances ?? '' },
+            { label: 'Paid', value: (e) => e.month?.paid ?? '' }, { label: 'Still to pay', value: (e) => e.month?.balance ?? '' },
+          ]}
+        />
+        <PrintButton />
       </PageHeader>
 
       <div className="stats">

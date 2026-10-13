@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useToast } from '../components/Toast.jsx';
-import { Card, Empty, ErrorBox, Loading, ModeSelect, PageHeader, SearchInput, Stat, Tabs } from '../components/ui.jsx';
+import { Card, Empty, ErrorBox, ExportButton, Loading, ModeSelect, PageHeader, PrintButton, SearchInput, Stat, Tabs } from '../components/ui.jsx';
 import {
   addDays, daysBetween, daysText, fmtDateFull, fmtDateLong, money, round2, sum, toNum, todayStr, whatsappLink,
 } from '../lib/format.js';
@@ -107,10 +107,22 @@ export default function Collection() {
       <PageHeader title="Daily Collection" hindi="रोज़ की वसूली" subtitle={fmtDateFull(date)}>
         <div className="date-nav">
           <button className="btn" onClick={() => setDate(addDays(date, -1))}>‹ Yesterday</button>
-          <input type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
-          <button className="btn" onClick={() => setDate(addDays(date, 1))}>Next ›</button>
+          <input type="date" value={date} max={todayStr()} onChange={(e) => e.target.value && e.target.value <= todayStr() && setDate(e.target.value)} />
+          <button className="btn" disabled={date >= todayStr()} onClick={() => setDate(addDays(date, 1))}>Next ›</button>
           {date !== todayStr() && <button className="btn btn-primary" onClick={() => setDate(todayStr())}>Today</button>}
         </div>
+        <ExportButton
+          filename={`collection-${date}.csv`}
+          rows={rows}
+          columns={[
+            { label: 'Loan #', key: 'loan_no' }, { label: 'Name', key: 'borrower_name' }, { label: 'Phone', key: 'borrower_phone' },
+            { label: 'Daily', key: 'daily' },
+            { label: 'Status', value: (l) => ({ paid: 'Paid', advance: 'Advance', pending: 'Not paid', done: 'Fully paid' })[l.state] },
+            { label: 'Paid this day', key: 'paidToday' }, { label: 'Paid till', key: 'paid_till' },
+            { label: 'Behind (bakaya)', key: 'short' }, { label: 'Balance', key: 'balance' },
+          ]}
+        />
+        <PrintButton />
       </PageHeader>
 
       <div className="stats">

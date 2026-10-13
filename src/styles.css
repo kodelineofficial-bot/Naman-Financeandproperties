@@ -190,6 +190,8 @@ kbd { border: 1px solid var(--line-strong); border-bottom-width: 2px; padding: 0
 .badge-green { background: var(--green-bg); color: var(--green); }
 .badge-red { background: var(--red-bg); color: var(--red); }
 .badge-blue { background: var(--blue-bg); color: var(--blue); }
+.badge-purple { background: #efe6fb; color: #5b2a91; }
+.renew-box { border: 2px solid #c9b3ea; background: #faf6ff; }
 .badge-grey { background: #efe8db; color: var(--ink-soft); }
 
 /* ---------- Tables ---------- */

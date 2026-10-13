@@ -112,7 +112,7 @@ export function AdvanceForm({ employee, onClose }) {
     <Modal title={`Advance / loan to ${employee.name}`} onClose={onClose}>
       <form onSubmit={submit}>
         <div className="form-grid">
-          <Field label="Date given"><input type="date" required value={f.given_on} onChange={set('given_on')} /></Field>
+          <Field label="Date given" hint="Today or earlier"><input type="date" required max={todayStr()} value={f.given_on} onChange={set('given_on')} /></Field>
           <Field label="Amount (₹)"><input type="number" min="0" step="any" required autoFocus value={f.amount} onChange={set('amount')} /></Field>
           <Field label="Type">
             <select value={f.kind} onChange={set('kind')}>
@@ -173,7 +173,7 @@ export function SalaryPayForm({ employee, month, suggested, onClose }) {
       <form onSubmit={submit}>
         <div className="form-grid">
           <Field label="Salary for month"><input type="month" required value={f.salary_month} onChange={set('salary_month')} /></Field>
-          <Field label="Paid on"><input type="date" required value={f.paid_on} onChange={set('paid_on')} /></Field>
+          <Field label="Paid on" hint="Today or earlier"><input type="date" required max={todayStr()} value={f.paid_on} onChange={set('paid_on')} /></Field>
           <Field label="Amount (₹)" hint={suggested != null ? `Balance due: ${money(suggested)}` : undefined}>
             <input type="number" min="0" step="any" required autoFocus value={f.amount} onChange={set('amount')} />
           </Field>

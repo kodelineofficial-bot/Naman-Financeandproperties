@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Empty, ErrorBox, Loading, PageHeader, SearchInput } from '../../components/ui.jsx';
+import { Card, Empty, ErrorBox, Loading, PageHeader, PrintButton, SearchInput } from '../../components/ui.jsx';
 import { downloadCSV, money, round2, toNum, todayStr } from '../../lib/format.js';
 import { useLoad } from '../../lib/hooks.js';
 import { q, supabase } from '../../lib/supabase.js';
@@ -50,8 +50,9 @@ export default function Borrowers() {
             ])
           }
         >
-          ⬇ Export
+          ⬇ Excel
         </button>
+        <PrintButton />
         <button className="btn btn-primary" onClick={() => setAdding(true)}>+ New borrower</button>
       </PageHeader>
 

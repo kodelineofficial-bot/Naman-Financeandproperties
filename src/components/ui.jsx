@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { MODES, money, toNum } from '../lib/format.js';
+import { MODES, downloadCSV, money, toNum } from '../lib/format.js';
 
 export function PageHeader({ title, hindi, subtitle, children }) {
   return (
@@ -117,6 +117,7 @@ const STATUS = {
   closed: { label: 'Closed', cls: 'badge-green' },
   defaulted: { label: 'Defaulted', cls: 'badge-red' },
   cancelled: { label: 'Cancelled', cls: 'badge-grey' },
+  renewed: { label: 'Renewed', cls: 'badge-purple' },
 };
 
 export function StatusBadge({ status }) {
@@ -164,5 +165,29 @@ export function SearchInput({ value, onChange, placeholder = 'Search…' }) {
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
     />
+  );
+}
+
+/** "Excel" download (CSV opens in Excel / Google Sheets). columns: [{ label, key | value(row) }] */
+export function ExportButton({ filename, rows, columns, label = 'Excel' }) {
+  return (
+    <button
+      type="button"
+      className="btn no-print"
+      disabled={!rows?.length}
+      title="Download this list as an Excel file"
+      onClick={() => downloadCSV(filename, rows, columns)}
+    >
+      ⬇ {label}
+    </button>
+  );
+}
+
+/** Print the page, or "Save as PDF" from the print window. */
+export function PrintButton() {
+  return (
+    <button type="button" className="btn no-print" title="Print or save as PDF" onClick={() => window.print()}>
+      🖨 Print / PDF
+    </button>
   );
 }

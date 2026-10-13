@@ -63,7 +63,7 @@ When you edit or delete any entry, every report changes with it. Supabase Realti
 
 ### 1. Supabase
 1. Create a project at https://supabase.com and choose region **Mumbai (ap-south-1)**.
-2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql`, `002_security_hardening.sql`, `003_multiday_and_attendance.sql`).
+2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql`, `002_security_hardening.sql`, `003_multiday_and_attendance.sql`, `004_loan_renewal.sql`, `005_no_future_money_dates.sql`).
 3. *(Optional demo data)* Run `supabase/seed.sql`.
 4. **Authentication → Users → Add user**: enter the owner's email and password, and tick *Auto confirm*.
 5. Make that user an admin (SQL Editor):
@@ -99,6 +99,8 @@ supabase/
   migrations/001_schema.sql   tables, views, triggers, RLS, realtime
   migrations/002_security_hardening.sql   advisor fixes
   migrations/003_multiday_and_attendance.sql   multi-day payments (paid till), collection sheet, staff attendance
+  migrations/004_loan_renewal.sql   loan renewal (old balance cut from new loan, no-cash adjustment)
+  migrations/005_no_future_money_dates.sql   money entries cannot have a future date (keeps every page in sync)
   seed.sql                    optional demo data
 src/
   lib/        supabase client, formatting, loan maths, data hooks

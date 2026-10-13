@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Card, Empty, ErrorBox, Loading, PageHeader, Progress, SearchInput, Stat, StatusBadge, Tabs } from '../../components/ui.jsx';
+import { Card, Empty, ErrorBox, Loading, PageHeader, PrintButton, Progress, SearchInput, Stat, StatusBadge, Tabs } from '../../components/ui.jsx';
 import { downloadCSV, fmtDate, money, sum, toNum, todayStr } from '../../lib/format.js';
 import { useLoad } from '../../lib/hooks.js';
 import { q, supabase } from '../../lib/supabase.js';
@@ -69,7 +69,8 @@ export default function LoansList() {
   return (
     <>
       <PageHeader title="Loans" hindi="उधारी खाता" subtitle="Every loan with live balance, overdue and progress">
-        <button className="btn" onClick={exportCsv} disabled={!rows.length}>⬇ Export</button>
+        <button className="btn" onClick={exportCsv} disabled={!rows.length}>⬇ Excel</button>
+        <PrintButton />
         <Link to="/loans/new" className="btn btn-primary">+ New loan</Link>
       </PageHeader>
 
@@ -89,6 +90,7 @@ export default function LoansList() {
             options={[
               { value: 'open', label: 'Running', count: count('open') },
               { value: 'closed', label: 'Closed', count: count('closed') },
+              { value: 'renewed', label: 'Renewed', count: count('renewed') },
               { value: 'defaulted', label: 'Defaulted', count: count('defaulted') },
               { value: 'cancelled', label: 'Cancelled', count: count('cancelled') },
               { value: 'all', label: 'All', count: count('all') },

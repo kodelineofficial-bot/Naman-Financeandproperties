@@ -151,7 +151,8 @@ export const MODES = [
   { value: 'other', label: 'Other' },
 ];
 
-export const modeLabel = (m) => MODES.find((x) => x.value === m)?.label || m || '—';
+export const modeLabel = (m) =>
+  m === 'renewal' ? 'Renewal adjust (no cash)' : MODES.find((x) => x.value === m)?.label || m || '—';
 
 export const EXPENSE_CATEGORIES = [
   'Tea / Snacks', 'Food', 'Fuel / Petrol', 'Travel', 'Rent', 'Electricity',

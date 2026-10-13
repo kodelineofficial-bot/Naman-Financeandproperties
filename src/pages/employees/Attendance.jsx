@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useToast } from '../../components/Toast.jsx';
-import { Card, Empty, ErrorBox, Loading, PageHeader, Stat, Tabs } from '../../components/ui.jsx';
+import { Card, Empty, ErrorBox, ExportButton, Loading, PageHeader, PrintButton, Stat, Tabs } from '../../components/ui.jsx';
 import {
   addDays, addMonths, fmtDateFull, fmtMonth, monthEnd, monthStart, todayStr,
 } from '../../lib/format.js';
@@ -71,6 +71,15 @@ function DayView({ date, setDate }) {
         <input type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
         <button className="btn" onClick={() => setDate(addDays(date, 1))}>Next ›</button>
         {date !== todayStr() && <button className="btn btn-primary" onClick={() => setDate(todayStr())}>Today</button>}
+        <ExportButton
+          filename={`attendance-${date}.csv`}
+          rows={rows}
+          columns={[
+            { label: 'Date', value: () => date }, { label: 'Name', key: 'name' }, { label: 'Job', key: 'designation' },
+            { label: 'Status', value: (r) => (r.status ? ATT[r.status].label : 'Not marked') },
+          ]}
+        />
+        <PrintButton />
       </div>
       <h2 className="day-title">{fmtDateFull(date)}</h2>
 
@@ -167,6 +176,16 @@ function MonthView({ month, setMonth }) {
         <button className="btn" onClick={() => setMonth(addMonths(month, -1))}>‹ Previous month</button>
         <strong className="year">{fmtMonth(month)}</strong>
         <button className="btn" onClick={() => setMonth(addMonths(month, 1))}>Next month ›</button>
+        <ExportButton
+          filename={`attendance-${month.slice(0, 7)}.csv`}
+          rows={data?.emps}
+          columns={[
+            { label: 'Name', key: 'name' },
+            ...dates.map((d) => ({ label: d.slice(8), value: (e) => { const st = data.map[`${e.id}|${d}`]; return st ? ATT[st].short : ''; } })),
+            ...ORDER.map((st) => ({ label: ATT[st].label, value: (e) => dates.filter((d) => data.map[`${e.id}|${d}`] === st).length })),
+          ]}
+        />
+        <PrintButton />
       </div>
       <ErrorBox error={error} />
       <Card flush>

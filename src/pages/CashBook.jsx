@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useToast } from '../components/Toast.jsx';
-import { Card, Empty, ErrorBox, Field, Loading, Modal, ModeSelect, PageHeader, Stat } from '../components/ui.jsx';
+import { Card, Empty, ErrorBox, ExportButton, Field, Loading, Modal, ModeSelect, PageHeader, PrintButton, Stat } from '../components/ui.jsx';
 import { fmtDate, modeLabel, money, round2, sum, todayStr } from '../lib/format.js';
 import { useAction, useLoad } from '../lib/hooks.js';
 import { q, supabase } from '../lib/supabase.js';
@@ -36,7 +36,7 @@ function CashForm({ direction, onClose }) {
     <Modal title={direction === 'in' ? 'Cash in — capital / other income' : 'Cash out — owner withdrawal / deposit'} onClose={onClose}>
       <form onSubmit={submit}>
         <div className="form-grid">
-          <Field label="Date"><input type="date" required value={f.entry_date} onChange={set('entry_date')} /></Field>
+          <Field label="Date money came / went · पैसा किस दिन" hint="Today or earlier — not a future date"><input type="date" required max={todayStr()} value={f.entry_date} onChange={set('entry_date')} /></Field>
           <Field label="Amount (₹)"><input type="number" min="0" step="any" required autoFocus value={f.amount} onChange={set('amount')} /></Field>
           <Field label="Mode"><ModeSelect value={f.mode} onChange={(v) => setF({ ...f, mode: v })} /></Field>
           <Field label={direction === 'in' ? 'From' : 'To'}><input value={f.party} onChange={set('party')} placeholder="Owner, bank, partner…" /></Field>
@@ -75,6 +75,16 @@ export default function CashBook() {
       <PageHeader title="Cash In / Out" hindi="पूंजी · निकासी" subtitle="Owner adds capital, takes money home, deposits to bank, other income">
         <button className="btn btn-primary" onClick={() => setModal('in')}>+ Cash in</button>
         <button className="btn" onClick={() => setModal('out')}>− Cash out</button>
+        <ExportButton
+          filename="cash-in-out.csv"
+          rows={rows}
+          columns={[
+            { label: 'Date', key: 'entry_date' }, { label: 'In / Out', value: (r) => (r.direction === 'in' ? 'In' : 'Out') },
+            { label: 'Party', key: 'party' }, { label: 'Details', key: 'description' }, { label: 'Mode', value: (r) => modeLabel(r.mode) },
+            { label: 'Amount', key: 'amount' },
+          ]}
+        />
+        <PrintButton />
       </PageHeader>
       <div className="stats">
         <Stat label="Total cash in" value={money(sum(ins, 'amount'))} tone="green" />

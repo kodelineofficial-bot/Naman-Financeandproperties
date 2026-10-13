@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { Amount, Card, Empty, ErrorBox, Loading, PageHeader, Stat } from '../components/ui.jsx';
+import { Amount, Card, Empty, ErrorBox, ExportButton, Loading, PageHeader, PrintButton, Stat } from '../components/ui.jsx';
 import { getBalanceAsOf } from '../lib/api.js';
 import {
   LEDGER_KINDS, fmtDateFull, fmtDateShort, fmtMonth, money, monthStart, sum, toNum, todayStr, whatsappLink,
@@ -83,6 +83,18 @@ export default function Dashboard() {
         <Link to="/attendance" className="btn">
           ☑ Attendance
         </Link>
+        <ExportButton
+          label="Running loans"
+          filename={`running-loans-${today}.csv`}
+          rows={d.loans}
+          columns={[
+            { label: 'Loan #', key: 'loan_no' }, { label: 'Name', key: 'borrower_name' }, { label: 'Phone', key: 'borrower_phone' },
+            { label: 'Principal', key: 'principal' }, { label: 'Daily', key: 'daily_installment' },
+            { label: 'Paid today', key: 'paid_today' }, { label: 'Paid till', key: 'paid_till' },
+            { label: 'Balance', key: 'outstanding' }, { label: 'Overdue', key: 'overdue' }, { label: 'Status', key: 'status' },
+          ]}
+        />
+        <PrintButton />
       </PageHeader>
       <ErrorBox error={error} />
 

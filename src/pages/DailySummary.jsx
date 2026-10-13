@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, ErrorBox, Loading, PageHeader, Stat } from '../components/ui.jsx';
+import { Card, ErrorBox, Loading, PageHeader, PrintButton, Stat } from '../components/ui.jsx';
 import { getOpeningOn } from '../lib/api.js';
 import {
   addDays, downloadCSV, fmtDate, fmtWeekday, money, monthStart, round2, sum, toNum, todayStr,
@@ -88,9 +88,9 @@ export default function DailySummary() {
             ])
           }
         >
-          ⬇ Export
+          ⬇ Excel
         </button>
-        <button className="btn" onClick={() => window.print()}>Print</button>
+        <PrintButton />
       </PageHeader>
 
       <Card>

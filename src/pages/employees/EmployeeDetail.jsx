@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../../components/Toast.jsx';
-import { Badge, Card, Empty, ErrorBox, Loading, PageHeader, Stat } from '../../components/ui.jsx';
+import { Badge, Card, Empty, ErrorBox, ExportButton, Loading, PageHeader, PrintButton, Stat } from '../../components/ui.jsx';
 import { Legend, MonthCalendar } from '../../components/KhataCalendar.jsx';
 import { useSettings } from '../../context/SettingsContext.jsx';
 import {
@@ -98,6 +98,17 @@ export default function EmployeeDetail() {
         <button className="btn" onClick={() => setModal('edit')}>Edit</button>
         <button className="btn" onClick={() => setModal('adv')}>+ Advance / loan</button>
         <button className="btn btn-primary" onClick={() => setModal('pay')}>Pay salary</button>
+        <ExportButton
+          filename={`${emp.name}-salary-statement.csv`}
+          rows={statement}
+          columns={[
+            { label: 'Month', value: (r) => fmtMonth(r.month) }, { label: 'Salary', key: 'salary' },
+            { label: 'Present', value: (r) => r.att.present }, { label: 'Absent', value: (r) => r.att.absent },
+            { label: 'Half day', value: (r) => r.att.half }, { label: 'Leave', value: (r) => r.att.leave },
+            { label: 'Absent cut', key: 'cut' }, { label: 'Advance', key: 'adv' }, { label: 'Paid', key: 'paid' }, { label: 'Balance', key: 'balance' },
+          ]}
+        />
+        <PrintButton />
       </PageHeader>
       <ErrorBox error={error} />
 

@@ -1,6 +1,6 @@
 import { Link, useSearchParams } from 'react-router-dom';
 import { useToast } from '../components/Toast.jsx';
-import { Amount, Card, Empty, ErrorBox, Loading, PageHeader, Stat } from '../components/ui.jsx';
+import { Amount, Card, Empty, ErrorBox, ExportButton, Loading, PageHeader, PrintButton, Stat } from '../components/ui.jsx';
 import { deleteLedgerEntry, getLedger, getOpeningOn } from '../lib/api.js';
 import { LEDGER_KINDS, addDays, fmtDateFull, modeLabel, money, round2, sum, toNum, todayStr } from '../lib/format.js';
 import { useAction, useLoad } from '../lib/hooks.js';
@@ -94,11 +94,20 @@ export default function DayBook() {
       <PageHeader title="Day Book" hindi="रोज़नामचा" subtitle={`${fmtDateFull(date)} — full detail of the day`}>
         <div className="date-nav">
           <button className="btn btn-sm" onClick={() => setDate(addDays(date, -1))}>‹ Prev</button>
-          <input type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
-          <button className="btn btn-sm" onClick={() => setDate(addDays(date, 1))}>Next ›</button>
+          <input type="date" value={date} max={todayStr()} onChange={(e) => e.target.value && e.target.value <= todayStr() && setDate(e.target.value)} />
+          <button className="btn btn-sm" disabled={date >= todayStr()} onClick={() => setDate(addDays(date, 1))}>Next ›</button>
           {date !== todayStr() && <button className="btn btn-sm" onClick={() => setDate(todayStr())}>Today</button>}
         </div>
-        <button className="btn no-print" onClick={() => window.print()}>Print</button>
+        <ExportButton
+          filename={`daybook-${date}.csv`}
+          rows={data?.entries}
+          columns={[
+            { label: 'Date', key: 'entry_date' }, { label: 'Type', value: (r) => LEDGER_KINDS[r.kind]?.short || r.kind },
+            { label: 'Party / Details', key: 'party' }, { label: 'Note', key: 'note' }, { label: 'Mode', value: (r) => modeLabel(r.mode) },
+            { label: 'In', value: (r) => (r.direction === 'in' ? r.amount : '') }, { label: 'Out', value: (r) => (r.direction === 'out' ? r.amount : '') },
+          ]}
+        />
+        <PrintButton />
       </PageHeader>
       <ErrorBox error={error} />
 

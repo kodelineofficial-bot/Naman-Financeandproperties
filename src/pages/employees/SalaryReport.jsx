@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, Empty, ErrorBox, Loading, PageHeader, Stat } from '../../components/ui.jsx';
+import { Card, Empty, ErrorBox, Loading, PageHeader, PrintButton, Stat } from '../../components/ui.jsx';
 import { addMonths, downloadCSV, fmtMonth, money, monthStart, sum, toNum, todayStr } from '../../lib/format.js';
 import { useLoad } from '../../lib/hooks.js';
 import { q, supabase } from '../../lib/supabase.js';
@@ -36,10 +36,10 @@ export default function SalaryReport() {
             ])
           }
         >
-          ⬇ Export
+          ⬇ Excel
         </button>
         <Link className="btn" to="/attendance">Attendance</Link>
-        <button className="btn" onClick={() => window.print()}>Print</button>
+        <PrintButton />
       </PageHeader>
 
       <div className="stats">

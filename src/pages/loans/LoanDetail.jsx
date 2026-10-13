@@ -1,9 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../../components/Toast.jsx';
-import {
-  Card, Empty, ErrorBox, Field, Loading, Modal, ModeSelect, PageHeader, Progress, Stat, StatusBadge,
-} from '../../components/ui.jsx';
+import { Card, Empty, ErrorBox, ExportButton, Field, Loading, Modal, ModeSelect, PageHeader, PrintButton, Progress, Stat, StatusBadge } from '../../components/ui.jsx';
 import KhataCalendar from '../../components/KhataCalendar.jsx';
 import {
   addDays, daysText, fmtDate, fmtDateLong, fmtDateShort, modeLabel, money, round2, sum, toNum, todayStr, whatsappLink,
@@ -21,6 +19,7 @@ function EntryModal({ title, table, loanId, defaultAmount, max, daily, collected
     e.preventDefault();
     const amount = round2(f.amount);
     if (amount <= 0) return toast.error('Enter an amount.');
+    if (f.paid_on > todayStr()) return toast.error('Date cannot be in the future · aage ki tareekh nahi');
     if (max != null && amount > max + 0.001 && !window.confirm(`This is more than the remaining ${money(max)}. Save anyway?`)) return;
     const ok = await run(
       () => q(supabase.from(table).insert({ loan_id: loanId, paid_on: f.paid_on, amount, mode: f.mode, note: f.note.trim() || null })),
@@ -33,7 +32,9 @@ function EntryModal({ title, table, loanId, defaultAmount, max, daily, collected
     <Modal title={title} onClose={onClose}>
       <form onSubmit={submit}>
         <div className="form-grid">
-          <Field label="Date"><input type="date" required value={f.paid_on} onChange={(e) => setF({ ...f, paid_on: e.target.value })} /></Field>
+          <Field label="Date money came · पैसा किस दिन मिला" hint="Not the 'paid till' date — the days buttons below decide that">
+            <input type="date" required max={todayStr()} value={f.paid_on} onChange={(e) => setF({ ...f, paid_on: e.target.value })} />
+          </Field>
           <Field label="Amount (₹) · रकम" hint={daily ? daysText(f.amount, daily) : undefined}>
             <input className="input-big" type="number" inputMode="decimal" min="0" step="any" required autoFocus value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} />
           </Field>
@@ -102,7 +103,11 @@ function TxnTable({ rows, onDelete, empty, daily }) {
               <td>{modeLabel(r.mode)}</td>
               <td className="muted">{r.note || ''}</td>
               <td className="num">
-                <button className="icon-btn danger" title="Delete" onClick={() => onDelete(r)}>🗑</button>
+                {r.mode === 'renewal' ? (
+                  <span className="muted small" title="Part of a renewal — cannot be deleted here">🔒</span>
+                ) : (
+                  <button className="icon-btn danger" title="Delete" onClick={() => onDelete(r)}>🗑</button>
+                )}
               </td>
             </tr>
           ))}
@@ -121,18 +126,22 @@ export default function LoanDetail() {
   const today = todayStr();
 
   const { data, loading, error } = useLoad(async () => {
-    const [loan, disb, reps] = await Promise.all([
+    const [loan, disb, reps, link, renewedInto] = await Promise.all([
       q(supabase.from('loan_summary').select('*').eq('id', id).single()),
       q(supabase.from('loan_disbursements').select('*').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
       q(supabase.from('loan_repayments').select('*').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
+      q(supabase.from('loans').select('renewed_from, from:renewed_from(loan_no)').eq('id', id).single()),
+      q(supabase.from('loans').select('id,loan_no,loan_date').eq('renewed_from', id)),
     ]);
-    return { loan, disb, reps };
+    return { loan, disb, reps, renewedFrom: link.renewed_from ? { id: link.renewed_from, loan_no: link.from?.loan_no } : null, renewedInto };
   }, [id]);
 
   if (loading && !data) return <Loading />;
   if (!data) return <ErrorBox error={error || new Error('Loan not found')} />;
 
-  const { loan: l, disb, reps } = data;
+  const { loan: l, disb, reps, renewedFrom, renewedInto } = data;
+  const renewAdjusted = sum(reps.filter((r) => r.mode === 'renewal'), 'amount');
+  const isRunning = l.status === 'active' || l.status === 'defaulted';
   const cal = buildLoanCalendar(l, reps, today);
   const missedDays = cal.counts.missed;
   const pendingDisb = toNum(l.pending_disbursement);
@@ -159,8 +168,20 @@ export default function LoanDetail() {
   }
 
   async function deleteLoan() {
-    if (!window.confirm(`Delete loan #${l.loan_no} with ALL its ${disb.length + reps.length} entries? This cannot be undone.`)) return;
-    const ok = await run(() => q(supabase.from('loans').delete().eq('id', id)), 'Loan deleted');
+    if (!window.confirm(`Delete loan #${l.loan_no} with ALL its ${disb.length + reps.length} entries? This cannot be undone.` + (renewedFrom ? `
+
+Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
+    const ok = await run(async () => {
+      await q(supabase.from('loans').delete().eq('id', id));
+      if (renewedFrom) {
+        // Undo the renewal: remove the adjustment on the old loan and put it back to running.
+        await q(
+          supabase.from('loan_repayments').delete()
+            .eq('loan_id', renewedFrom.id).eq('mode', 'renewal').eq('note', `Adjusted in new loan #${l.loan_no}`),
+        );
+        await q(supabase.rpc('recalc_loan_status', { p_loan: renewedFrom.id }));
+      }
+    }, renewedFrom ? `Loan deleted · Loan #${renewedFrom.loan_no} is running again` : 'Loan deleted');
     if (ok) navigate('/loans');
   }
 
@@ -176,14 +197,46 @@ export default function LoanDetail() {
           <button className="btn btn-primary btn-lg" onClick={() => setModal('rep')}>₹ Take payment · पैसे लिए</button>
         )}
         {wa && <a className="btn btn-wa" href={wa} target="_blank" rel="noreferrer">WhatsApp</a>}
+        {isRunning && (
+          <Link className="btn" to={`/loans/new?renew=${id}`}>🔁 Renew · नया loan</Link>
+        )}
         <Link className="btn" to={`/borrowers/${l.borrower_id}`}>Borrower</Link>
         <Link className="btn" to={`/loans/${id}/edit`}>Edit terms</Link>
-        <button className="btn" onClick={() => window.print()}>Print</button>
+        <ExportButton
+          filename={`loan-${l.loan_no}-${l.borrower_name}.csv`}
+          rows={[
+            ...disb.map((r) => ({ ...r, kind: 'Given (diya)' })),
+            ...reps.map((r) => ({ ...r, kind: 'Received (liya)' })),
+          ].sort((a, b) => (a.paid_on + a.created_at).localeCompare(b.paid_on + b.created_at))}
+          columns={[
+            { label: 'Date', key: 'paid_on' }, { label: 'Type', key: 'kind' }, { label: 'Amount', key: 'amount' },
+            { label: 'Days', value: (r) => (r.kind.startsWith('Received') ? daysText(r.amount, l.daily_installment).split(' ·')[0] : '') },
+            { label: 'Mode', value: (r) => modeLabel(r.mode) }, { label: 'Note', key: 'note' },
+          ]}
+        />
+        <PrintButton />
       </PageHeader>
       <ErrorBox error={error} />
 
+      {renewedInto.length > 0 && (
+        <div className="help-box renew-box">
+          🔁 <strong>This loan was renewed</strong> on {fmtDateLong(l.closed_on)} into{' '}
+          {renewedInto.map((n, i) => (
+            <span key={n.id}>{i > 0 && ', '}<Link to={`/loans/${n.id}`}><strong>Loan #{n.loan_no}</strong></Link></span>
+          ))}
+          . Balance adjusted: <strong>{money(renewAdjusted)}</strong>
+          {l.status === 'renewed' && outstanding > 0 && <> · Discount given (छूट): <strong>{money(outstanding)}</strong></>}
+        </div>
+      )}
+      {renewedFrom && (
+        <div className="help-box renew-box">
+          🔁 Renewed from <Link to={`/loans/${renewedFrom.id}`}><strong>Loan #{renewedFrom.loan_no}</strong></Link>.
+          Old balance adjusted from this loan: <strong>{money(sum(disb.filter((d) => d.mode === 'renewal'), 'amount'))}</strong> (no cash).
+        </div>
+      )}
+
       <div className="stats">
-        <Stat label="Balance · बाकी" value={money(outstanding)} tone="gold" hint={`${l.installments_left} installments left`} />
+        <Stat label="Balance · बाकी" value={money(l.status === 'renewed' ? 0 : outstanding)} tone="gold" hint={l.status === 'renewed' ? 'Renewed — moved to new loan' : `${l.installments_left} installments left`} />
         <Stat label="Collected · वसूल" value={money(l.collected_total)} tone="green" hint={`incl. ${money(l.advance_amount)} advance`} />
         <Stat label="Overdue · बकाया" value={money(l.overdue)} tone={toNum(l.overdue) > 0 ? 'red' : undefined} hint={`${missedDays} missed day(s)`} />
         <Stat label="To give · देना बाकी" value={money(pendingDisb)} tone={pendingDisb > 0 ? 'red' : undefined} hint={`Given ${money(l.disbursed)} of ${money(l.net_disbursable)}`} />
@@ -259,8 +312,9 @@ export default function LoanDetail() {
           <div className="btn-row">
             {l.status === 'active' && <button className="btn" disabled={busy} onClick={() => setStatus('closed')}>Settle / close now</button>}
             {l.status === 'active' && <button className="btn btn-danger-outline" disabled={busy} onClick={() => setStatus('defaulted')}>Mark defaulted</button>}
-            {l.status !== 'active' && <button className="btn" disabled={busy} onClick={() => setStatus('active')}>Re-open as active</button>}
-            {l.status !== 'cancelled' && <button className="btn btn-danger-outline" disabled={busy} onClick={() => setStatus('cancelled')}>Cancel loan</button>}
+            {l.status !== 'active' && l.status !== 'renewed' && <button className="btn" disabled={busy} onClick={() => setStatus('active')}>Re-open as active</button>}
+            {isRunning && <Link className="btn" to={`/loans/new?renew=${id}`}>🔁 Renew · नया loan</Link>}
+            {l.status !== 'cancelled' && l.status !== 'renewed' && <button className="btn btn-danger-outline" disabled={busy} onClick={() => setStatus('cancelled')}>Cancel loan</button>}
             <button className="btn btn-danger" disabled={busy} onClick={deleteLoan}>Delete loan</button>
           </div>
           <p className="muted small">Loans close automatically when the full amount is collected. Deleting removes all its entries from every report.</p>

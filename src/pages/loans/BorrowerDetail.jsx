@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../../components/Toast.jsx';
-import { Card, Empty, ErrorBox, Loading, PageHeader, Progress, Stat, StatusBadge } from '../../components/ui.jsx';
+import { Card, Empty, ErrorBox, ExportButton, Loading, PageHeader, PrintButton, Progress, Stat, StatusBadge } from '../../components/ui.jsx';
 import { fmtDate, money, sum, whatsappLink } from '../../lib/format.js';
 import { useAction, useLoad } from '../../lib/hooks.js';
 import { q, supabase } from '../../lib/supabase.js';
@@ -42,6 +42,17 @@ export default function BorrowerDetail() {
         {b.phone && <a className="btn" href={`tel:${b.phone}`}>Call</a>}
         <button className="btn" onClick={() => setEditing(true)}>Edit</button>
         <Link className="btn btn-primary" to={`/loans/new?borrower=${id}`}>+ New loan</Link>
+        <ExportButton
+          filename={`${b.name}-loans.csv`}
+          rows={loans}
+          columns={[
+            { label: 'Loan #', key: 'loan_no' }, { label: 'Date', key: 'loan_date' }, { label: 'Status', key: 'status' },
+            { label: 'Principal', key: 'principal' }, { label: 'Daily', key: 'daily_installment' }, { label: 'Total to pay', key: 'total_repayable' },
+            { label: 'Collected', key: 'collected_total' }, { label: 'Paid till', key: 'paid_till' },
+            { label: 'Balance', key: 'outstanding' }, { label: 'Overdue', key: 'overdue' },
+          ]}
+        />
+        <PrintButton />
       </PageHeader>
       <ErrorBox error={error} />
 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Amount, Card, Empty, ErrorBox, Loading, PageHeader, Stat } from '../components/ui.jsx';
+import { Amount, Card, Empty, ErrorBox, Loading, PageHeader, PrintButton, Stat } from '../components/ui.jsx';
 import {
   downloadCSV, fmtMonth, fmtMonthShort, money, monthEnd, round2, sum, toNum, todayStr,
 } from '../lib/format.js';
@@ -106,9 +106,9 @@ export default function Monthly() {
             ])
           }
         >
-          ⬇ Export
+          ⬇ Excel
         </button>
-        <button className="btn" onClick={() => window.print()}>Print</button>
+        <PrintButton />
       </PageHeader>
       <ErrorBox error={error} />
 

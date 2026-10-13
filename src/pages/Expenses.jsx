@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useToast } from '../components/Toast.jsx';
-import { Card, Empty, ErrorBox, Field, Loading, Modal, ModeSelect, PageHeader, Stat } from '../components/ui.jsx';
+import { Card, Empty, ErrorBox, Field, Loading, Modal, ModeSelect, PageHeader, PrintButton, Stat } from '../components/ui.jsx';
 import {
   EXPENSE_CATEGORIES, addDays, downloadCSV, fmtDate, modeLabel, money, monthStart, round2, sum, toNum, todayStr,
 } from '../lib/format.js';
@@ -41,7 +41,7 @@ function ExpenseForm({ expense, categories, onClose }) {
     <Modal title={expense ? 'Edit expense' : 'Add expense · खर्चा'} onClose={onClose}>
       <form onSubmit={(e) => submit(e, false)}>
         <div className="form-grid">
-          <Field label="Date"><input type="date" required value={f.spent_on} onChange={set('spent_on')} /></Field>
+          <Field label="Date money came / went · पैसा किस दिन" hint="Today or earlier — not a future date"><input type="date" required max={todayStr()} value={f.spent_on} onChange={set('spent_on')} /></Field>
           <Field label="Amount (₹)"><input type="number" min="0" step="any" required autoFocus value={f.amount} onChange={set('amount')} /></Field>
           <Field label="Category">
             <input list="exp-cats" required value={f.category} onChange={set('category')} />
@@ -119,8 +119,9 @@ export default function Expenses() {
             ])
           }
         >
-          ⬇ Export
+          ⬇ Excel
         </button>
+        <PrintButton />
         <button className="btn btn-primary" onClick={() => setEditing('new')}>+ Add expense</button>
       </PageHeader>
 

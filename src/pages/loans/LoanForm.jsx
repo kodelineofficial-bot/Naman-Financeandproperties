@@ -77,6 +77,35 @@ export default function LoanForm() {
 
   const borrowers = useLoad(getBorrowers, []);
 
+  // Renewal: /loans/new?renew=<old loan id>
+  const renewId = !isEdit ? params.get('renew') : null;
+  const oldLoan = useLoad(
+    () => (renewId ? q(supabase.from('loan_summary').select('*').eq('id', renewId).single()) : null),
+    [renewId],
+  );
+  const old = oldLoan.data;
+  const oldBalance = old ? round2(toNum(old.outstanding)) : 0;
+  const [adjust, setAdjust] = useState('');
+  const [renewReady, setRenewReady] = useState(false);
+  useEffect(() => {
+    if (!old || renewReady) return;
+    setBorrowerId(old.borrower_id);
+    setBorrowerMode('existing');
+    setAdjust(String(oldBalance));
+    setForm((f) => ({ ...f, principal: String(old.principal) }));
+    setRenewReady(true);
+  }, [old, renewReady, oldBalance]);
+  // A brand-new loan for someone who already has a running loan → offer renewal.
+  const running = useLoad(
+    () =>
+      !isEdit && !renewId && borrowerMode === 'existing' && borrowerId
+        ? q(supabase.from('loan_summary').select('id,loan_no,outstanding,daily_installment').eq('borrower_id', borrowerId).in('status', ['active', 'defaulted']))
+        : [],
+    [borrowerId, borrowerMode, renewId, isEdit],
+  );
+  const adjustAmt = renewId ? round2(adjust) : 0;
+  const discount = renewId ? round2(Math.max(0, oldBalance - adjustAmt)) : 0;
+
   // Apply defaults from Settings once (new loans only).
   useEffect(() => {
     if (isEdit || !settings || defaultsApplied) return;
@@ -121,6 +150,15 @@ export default function LoanForm() {
 
   const dailyPer10k = settings?.default_daily_per_10k ?? 150;
   const d = useMemo(() => deriveLoan(form, ov, dailyPer10k), [form, ov, dailyPer10k]);
+  const cashToGive = round2(d.net - adjustAmt);
+  const renewErrors = [];
+  if (renewId && old) {
+    if (!['active', 'defaulted'].includes(old.status)) renewErrors.push(`Loan #${old.loan_no} is not running — cannot renew.`);
+    if (adjustAmt < 0) renewErrors.push('Old balance to cut cannot be negative.');
+    if (adjustAmt > oldBalance + 0.001) renewErrors.push(`Cannot cut more than the old balance ${money(oldBalance)}.`);
+    if (cashToGive < 0) renewErrors.push(`Old balance ${money(adjustAmt)} is more than this loan's cash ${money(d.net)} — make the new loan bigger.`);
+  }
+  const allErrors = [...d.errors, ...renewErrors];
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const autoProps = { form, ov, derived: d, setForm, setOv };
@@ -136,11 +174,11 @@ export default function LoanForm() {
 
   async function submit(e) {
     e.preventDefault();
-    if (d.errors.length) return toast.error(d.errors[0]);
+    if (allErrors.length) return toast.error(allErrors[0]);
     if (!isEdit && borrowerMode === 'existing' && !borrowerId) return toast.error('Choose a borrower or add a new one.');
     if (!isEdit && borrowerMode === 'new' && !newBorrower.name.trim()) return toast.error('Borrower name is required.');
-    const give = giveNow ? round2(giveAmount === '' ? d.net : giveAmount) : 0;
-    if (!isEdit && give > d.net) return toast.error(`Cannot give more than ${money(d.net)} now.`);
+    const give = giveNow ? round2(giveAmount === '' ? cashToGive : giveAmount) : 0;
+    if (!isEdit && give > cashToGive + 0.001) return toast.error(`Cannot give more than ${money(cashToGive)} now.`);
 
     const loanPayload = {
       principal: d.principal,
@@ -170,6 +208,15 @@ export default function LoanForm() {
         bId = b.id;
       }
       const loan = await q(supabase.from('loans').insert({ ...loanPayload, borrower_id: bId }).select('id').single());
+      if (renewId) {
+        try {
+          await q(supabase.rpc('renew_loan', { p_old: renewId, p_new: loan.id, p_adjust: adjustAmt, p_date: form.loan_date }));
+        } catch (e) {
+          // Do not leave a half-done renewal behind.
+          await q(supabase.from('loans').delete().eq('id', loan.id));
+          throw e;
+        }
+      }
       if (give > 0) {
         await q(
           supabase.from('loan_disbursements').insert({
@@ -178,7 +225,7 @@ export default function LoanForm() {
         );
       }
       return loan;
-    }, isEdit ? 'Loan updated' : 'Loan created');
+    }, isEdit ? 'Loan updated' : renewId ? `Loan renewed · old loan #${old?.loan_no} closed` : 'Loan created');
 
     if (res) navigate(`/loans/${res.id}`);
   }
@@ -188,16 +235,43 @@ export default function LoanForm() {
   return (
     <>
       <PageHeader
-        title={isEdit ? 'Edit loan terms' : 'New loan'}
-        hindi={isEdit ? 'उधारी बदलें' : 'नई उधारी'}
+        title={isEdit ? 'Edit loan terms' : renewId ? 'Renew loan' : 'New loan'}
+        hindi={isEdit ? 'उधारी बदलें' : renewId ? 'लोन रिन्यू' : 'नई उधारी'}
         subtitle="Every amount is flexible — type over any “auto” value to set your own."
       >
-        <Link to={isEdit ? `/loans/${id}` : '/loans'} className="btn">Cancel</Link>
+        <Link to={isEdit ? `/loans/${id}` : renewId ? `/loans/${renewId}` : '/loans'} className="btn">Cancel</Link>
       </PageHeader>
 
       <form onSubmit={submit} className="loan-form">
         <div className="loan-form-main">
-          {!isEdit ? (
+          {renewId ? (
+            <Card title="1 · Old loan to renew (पुराना लोन)" className="renew-box">
+              <ErrorBox error={oldLoan.error} />
+              {!old ? (
+                <Loading />
+              ) : (
+                <>
+                  <div className="kv-list">
+                    <div><span>Borrower</span><strong>{old.borrower_name} {old.borrower_phone ? `· ${old.borrower_phone}` : ''}</strong></div>
+                    <div><span>Old loan</span><strong>#{old.loan_no} · {money(old.principal)} · {money(old.daily_installment)}/day</strong></div>
+                    <div><span>Paid till</span><strong>{old.paid_till ? fmtDateLong(old.paid_till) : 'nothing paid yet'}</strong></div>
+                    <div className="kv-total"><span>Old balance still to collect (बाकी)</span><strong>{money(oldBalance)}</strong></div>
+                  </div>
+                  <div className="form-grid" style={{ marginTop: 12 }}>
+                    <Field
+                      label="Cut from new loan (पुराना बाकी काटें) ₹"
+                      hint={discount > 0 ? `Discount (छूट) given: ${money(discount)} — this part is forgiven` : 'Full old balance is cut. Lower it only if you want to give a discount (छूट).'}
+                    >
+                      <input className="input-big" type="number" min="0" step="any" value={adjust} onChange={(e) => setAdjust(e.target.value)} />
+                    </Field>
+                  </div>
+                  <p className="muted small">
+                    The old loan will be marked <strong>Renewed</strong> and closed. This cut is not cash — it does not go in the cash book.
+                  </p>
+                </>
+              )}
+            </Card>
+          ) : !isEdit ? (
             <Card title="1 · Borrower (कौन ले रहा है)">
               <div className="segmented">
                 <button type="button" className={borrowerMode === 'existing' ? 'active' : ''} onClick={() => setBorrowerMode('existing')}>Existing borrower</button>
@@ -229,6 +303,15 @@ export default function LoanForm() {
                       </button>
                     ))}
                   </div>
+                  {(running.data || []).map((r) => (
+                    <div key={r.id} className="help-box renew-box" style={{ marginTop: 12 }}>
+                      ⚠ This borrower already has <strong>Loan #{r.loan_no}</strong> running with <strong>{money(r.outstanding)}</strong> still to collect.
+                      <div className="btn-row" style={{ marginTop: 8 }}>
+                        <Link className="btn btn-primary" to={`/loans/new?renew=${r.id}`}>🔁 Renew loan #{r.loan_no} (cut old balance)</Link>
+                        <span className="muted small">or continue below for a separate second loan</span>
+                      </div>
+                    </div>
+                  ))}
                 </>
               ) : (
                 <BorrowerFields value={newBorrower} onChange={setNewBorrower} compact />
@@ -274,7 +357,7 @@ export default function LoanForm() {
               </Field>
 
               <Field label="Loan date">
-                <input type="date" required value={form.loan_date} onChange={set('loan_date')} />
+                <input type="date" required max={todayStr()} value={form.loan_date} onChange={set('loan_date')} />
               </Field>
               <Field label="Daily collection starts on">
                 <input type="date" required value={form.collection_start_date} onChange={set('collection_start_date')} />
@@ -303,8 +386,8 @@ export default function LoanForm() {
               </label>
               {giveNow && (
                 <div className="form-grid three">
-                  <Field label="Amount given now" hint={`Net payable is ${money(d.net)}. Give the rest later from the loan page.`}>
-                    <input type="number" min="0" step="any" value={giveAmount} placeholder={String(d.net)} onChange={(e) => setGiveAmount(e.target.value)} />
+                  <Field label="Amount given now" hint={`Cash payable is ${money(cashToGive)}. Give the rest later from the loan page.`}>
+                    <input type="number" min="0" step="any" value={giveAmount} placeholder={String(cashToGive)} onChange={(e) => setGiveAmount(e.target.value)} />
                   </Field>
                   <Field label="Mode"><ModeSelect value={giveMode} onChange={setGiveMode} /></Field>
                 </div>
@@ -319,7 +402,10 @@ export default function LoanForm() {
             <div className="calc-row"><span>Loan amount</span><strong>{money(d.principal)}</strong></div>
             <div className="calc-row minus"><span>− Interest cut ({d.effInterestPct}%)</span><strong>{money(d.interest_amount)}</strong></div>
             <div className="calc-row minus"><span>− Advance kept ({form.advance_days || 0} days)</span><strong>{money(d.advance_amount)}</strong></div>
-            <div className="calc-row total"><span>Cash to give (देना)</span><strong>{money(d.net)}</strong></div>
+            {renewId && (
+              <div className="calc-row minus"><span>− Old loan #{old?.loan_no} balance</span><strong>{money(adjustAmt)}</strong></div>
+            )}
+            <div className="calc-row total"><span>Cash to give (देना)</span><strong>{money(cashToGive)}</strong></div>
 
             <div className="calc-sep" />
             <div className="calc-row"><span>Daily installment</span><strong>{money(d.daily_installment)}</strong></div>
@@ -337,14 +423,14 @@ export default function LoanForm() {
               Interest {money(d.interest_amount)} + extra {money(round2(d.total_repayable - d.principal))} ({d.effMarkup}%)
             </div>
 
-            {d.errors.length > 0 && (
+            {allErrors.length > 0 && (
               <div className="alert alert-error small">
-                {d.errors.map((er) => <div key={er}>{er}</div>)}
+                {allErrors.map((er) => <div key={er}>{er}</div>)}
               </div>
             )}
 
-            <button className="btn btn-primary btn-block" disabled={busy || d.errors.length > 0}>
-              {busy ? 'Saving…' : isEdit ? 'Save changes' : 'Create loan'}
+            <button className="btn btn-primary btn-block" disabled={busy || allErrors.length > 0 || (renewId && !old)}>
+              {busy ? 'Saving…' : isEdit ? 'Save changes' : renewId ? '🔁 Renew loan' : 'Create loan'}
             </button>
           </div>
         </aside>
