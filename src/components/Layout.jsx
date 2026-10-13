@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
+import { Logo } from './ui.jsx';
 import { getBalanceAsOf } from '../lib/api.js';
 import { money, todayStr } from '../lib/format.js';
 import { debounce, notifyChange, useLoad } from '../lib/hooks.js';
@@ -62,7 +63,7 @@ export default function Layout() {
     <div className={`shell ${open ? 'nav-open' : ''}`}>
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">₹</div>
+          <Logo size={42} light />
           <div>
             <div className="brand-name">{settings?.business_name || 'Naman - Finance & Properties'}</div>
             <div className="brand-sub">Admin Panel</div>

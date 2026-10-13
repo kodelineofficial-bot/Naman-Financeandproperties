@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { Logo } from '../components/ui.jsx';
 
 export default function Login() {
   const { session, isAdmin, loading, signIn } = useAuth();
@@ -31,7 +32,7 @@ export default function Login() {
     <div className="auth-page">
       <form className="auth-card" onSubmit={submit}>
         <div className="auth-brand">
-          <div className="brand-mark big">₹</div>
+          <div className="logo-big"><Logo size={72} /></div>
           <h1>Naman - Finance &amp; Properties</h1>
           <p className="muted">उधारी · वसूली · हिसाब — Admin Login</p>
         </div>

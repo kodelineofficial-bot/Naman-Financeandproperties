@@ -462,3 +462,7 @@ button.hbar:hover, .hbar.active { background: #f6efe1; }
   .print-only { display: block; }
   .cal-months { grid-template-columns: repeat(3, 1fr); }
 }
+
+.logo { display: block; flex-shrink: 0; border-radius: 10px; }
+.logo-big { display: flex; justify-content: center; margin: 0 auto 10px; }
+.logo-big .logo { border-radius: 18px; box-shadow: 0 6px 18px rgba(86, 20, 20, 0.25); }

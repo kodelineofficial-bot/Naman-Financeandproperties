@@ -191,3 +191,16 @@ export function PrintButton() {
     </button>
   );
 }
+
+/** Naman - Finance & Properties logo: roof (properties) over an "N" (Naman). */
+export function Logo({ size = 40, light = false }) {
+  const bg = light ? '#f3d27a' : '#7a1f1f';
+  const fg = light ? '#561414' : '#f3d27a';
+  return (
+    <svg className="logo" width={size} height={size} viewBox="0 0 64 64" role="img" aria-label="Naman - Finance & Properties">
+      <rect width="64" height="64" rx="14" fill={bg} />
+      <path d="M13 27 32 12l19 15" fill="none" stroke={fg} strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M21 53V31l22 22V31" fill="none" stroke={fg} strokeWidth="6" strokeLinecap="square" strokeLinejoin="miter" />
+    </svg>
+  );
+}
