@@ -67,7 +67,7 @@ export default function KhataCalendar({ cal, today }) {
   const title = (d) => {
     const parts = [fmtDateFull(d.date)];
     if (d.inSchedule) {
-      parts.push(KHATA_STATES[d.state]?.label || '');
+      parts.push(d.byAdvance ? 'Paid · covered by advance kept at loan time' : KHATA_STATES[d.state]?.label || '');
       if (d.state === 'partial') parts.push(`${money(d.covered)} of ${money(d.due)}`);
     } else {
       parts.push('Not a collection day for this loan');
@@ -100,7 +100,7 @@ export default function KhataCalendar({ cal, today }) {
         ))}
       </div>
       <p className="muted small">
-        Small ₹ number = money received on that date. Money is filled day by day from the first day, so ₹300 on a ₹150 loan fills 2 days.
+        Small ₹ number = money received on that date. The advance kept at loan time fills the first days; after that money is filled day by day, so ₹300 on a ₹150 loan fills 2 days.
       </p>
     </>
   );

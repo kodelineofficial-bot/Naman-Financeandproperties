@@ -311,7 +311,7 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
         </div>
       </Card>
 
-      <Card title="Khata calendar · रोज़ का हिसाब" actions={<span className="muted small">{cal.nDays} collection days</span>}>
+      <Card title="Khata calendar · रोज़ का हिसाब" actions={<span className="muted small">{cal.nDays} days{toNum(l.advance_amount) > 0 ? ` · first ${Math.floor(toNum(l.advance_amount) / toNum(l.daily_installment) + 1e-9)} paid by advance` : ''}</span>}>
         <KhataCalendar cal={cal} today={today} />
       </Card>
 

@@ -40,7 +40,8 @@ export default function Collection() {
         const paidToday = toNum(l.paid_on_date);
         const before = round2(toNum(l.collected_upto) - paidToday);
         const dayNo = daysBetween(l.collection_start_date, date) + 1;
-        const daysBefore = daily > 0 ? Math.floor(before / daily + 1e-9) : 0;
+        // The advance kept at loan time covers the first days of the schedule.
+        const daysBefore = daily > 0 ? Math.floor((before + toNum(l.advance_amount)) / daily + 1e-9) : 0;
         const balanceBefore = Math.max(0, round2(toNum(l.to_collect) - before));
         let state;
         if (paidToday > 0) state = 'paid';

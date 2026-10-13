@@ -17,6 +17,9 @@ import { addDays, monthStart, round2, toNum } from './format.js';
  * Example: 10,000 @4%, 150/day, 20% markup, 10 advance days
  *   → interest 400, total 12,000, 80 days, advance 1,500, net 8,100,
  *     70 daily installments still to collect (10,500), profit 2,400.
+ *
+ * The schedule is the full 80 days from collection_start_date. The advance
+ * covers the first 10 of them, so cash is due from day 11 to day 80.
  */
 export function deriveLoan(f, ov, dailyPer10k = 150) {
   const P = toNum(f.principal);
@@ -52,8 +55,12 @@ export function deriveLoan(f, ov, dailyPer10k = 150) {
   const profit = round2(total - P + interest);
   const effMarkup = P > 0 ? round2(((total - P) / P) * 100) : 0;
   const effInterestPct = P > 0 ? round2((interest / P) * 100) : 0;
+  const totalDays = daily > 0 ? Math.ceil(Math.max(0, total) / daily) : 0;
+  const advanceDaysCovered = daily > 0 ? Math.floor(advance / daily + 1e-9) : 0;
+  const firstCashDate =
+    f.collection_start_date && collectDays > 0 ? addDays(f.collection_start_date, advanceDaysCovered) : null;
   const endDate =
-    f.collection_start_date && collectDays > 0 ? addDays(f.collection_start_date, collectDays - 1) : null;
+    f.collection_start_date && totalDays > 0 ? addDays(f.collection_start_date, totalDays - 1) : null;
 
   const errors = [];
   if (P <= 0) errors.push('Loan amount must be more than 0.');
@@ -76,6 +83,8 @@ export function deriveLoan(f, ov, dailyPer10k = 150) {
     net,
     toCollect,
     collectDays,
+    advanceDaysCovered,
+    firstCashDate,
     profit,
     effMarkup,
     effInterestPct,
@@ -87,12 +96,14 @@ export function deriveLoan(f, ov, dailyPer10k = 150) {
 /**
  * Day-by-day khata for one loan.
  *
- * All cash collected is used to fill the schedule day by day, oldest day first.
- * So with ₹150/day, a ₹300 payment fills 2 days and ₹600 fills 4 days — and
- * a late payment fills the days that were missed before it.
+ * The schedule is every day of the loan (total ÷ daily), from collection_start_date.
+ * The advance kept at loan time fills the first days, then all cash collected
+ * fills the rest day by day, oldest day first. So with ₹150/day, a ₹300 payment
+ * fills 2 days and ₹600 fills 4 days — and a late payment fills the days that
+ * were missed before it.
  *
  * Returns
- *   days     : [{ date, due, covered, received, state, inSchedule }]
+ *   days     : [{ date, due, covered, received, state, inSchedule, byAdvance }]
  *              state = paid | partial | missed | advance | future | off
  *   months   : [{ month: 'YYYY-MM-01', days: [...] }]  (every date of each month)
  *   paidTill : last date that is fully paid (or null)
@@ -100,8 +111,9 @@ export function deriveLoan(f, ov, dailyPer10k = 150) {
  */
 export function buildLoanCalendar(loan, repayments, today) {
   const daily = toNum(loan.daily_installment);
-  const toCollect = Math.max(0, toNum(loan.total_repayable) - toNum(loan.advance_amount));
-  const nDays = daily > 0 ? Math.ceil(toCollect / daily - 1e-9) : 0;
+  const total = Math.max(0, toNum(loan.total_repayable));
+  const nDays = daily > 0 ? Math.ceil(total / daily - 1e-9) : 0;
+  let advancePool = round2(Math.min(total, Math.max(0, toNum(loan.advance_amount))));
 
   const received = {};
   let pool = 0;
@@ -117,16 +129,20 @@ export function buildLoanCalendar(loan, repayments, today) {
   const counts = { paid: 0, partial: 0, missed: 0, advance: 0, future: 0 };
   for (let i = 0; i < nDays; i++) {
     const date = addDays(start, i);
-    const due = round2(Math.min(daily, toCollect - daily * i));
-    const covered = round2(Math.min(due, Math.max(0, pool)));
-    pool = round2(pool - covered);
+    const due = round2(Math.min(daily, total - daily * i));
+    const fromAdvance = round2(Math.min(due, advancePool));
+    advancePool = round2(advancePool - fromAdvance);
+    const fromCash = round2(Math.min(due - fromAdvance, Math.max(0, pool)));
+    pool = round2(pool - fromCash);
+    const covered = round2(fromAdvance + fromCash);
+    const byAdvance = fromAdvance >= due - 0.001;
     let state;
     if (covered >= due - 0.001) state = date > today ? 'advance' : 'paid';
     else if (covered > 0) state = 'partial';
     else state = date > today ? 'future' : 'missed';
     if (state === 'paid' || state === 'advance') paidTill = date;
     counts[state] += 1;
-    schedule[date] = { due, covered, state };
+    schedule[date] = { due, covered, state, byAdvance };
   }
   const end = nDays > 0 ? addDays(start, nDays - 1) : start;
 
@@ -153,6 +169,7 @@ export function buildLoanCalendar(loan, repayments, today) {
         received: received[d] || 0,
         state: s ? s.state : 'off',
         inSchedule: !!s,
+        byAdvance: !!s?.byAdvance,
       };
       md.push(cell);
       if (s) days.push(cell);

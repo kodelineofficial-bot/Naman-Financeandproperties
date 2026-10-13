@@ -414,7 +414,11 @@ export default function LoanForm() {
             <div className="calc-row minus"><span>− Already kept as advance</span><strong>{money(d.advance_amount)}</strong></div>
             <div className="calc-row total"><span>To collect daily (लेना)</span><strong>{money(d.toCollect)}</strong></div>
             <div className="calc-row"><span>Installments left</span><strong>{d.collectDays}</strong></div>
-            <div className="calc-row"><span>First collection</span><strong>{fmtDateLong(form.collection_start_date)}</strong></div>
+            <div className="calc-row"><span>Day 1 of loan</span><strong>{fmtDateLong(form.collection_start_date)}</strong></div>
+            {d.advanceDaysCovered > 0 && (
+              <div className="calc-row"><span>Paid by advance</span><strong>first {d.advanceDaysCovered} days</strong></div>
+            )}
+            <div className="calc-row"><span>First cash collection</span><strong>{d.firstCashDate ? fmtDateLong(d.firstCashDate) : '—'}</strong></div>
             <div className="calc-row"><span>Last collection</span><strong>{d.endDate ? fmtDateLong(d.endDate) : '—'}</strong></div>
 
             <div className="calc-sep" />
