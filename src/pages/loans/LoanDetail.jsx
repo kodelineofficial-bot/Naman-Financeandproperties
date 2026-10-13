@@ -290,7 +290,7 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
 
       <div className="stats">
         <Stat label="Balance · बाकी" value={money(l.status === 'renewed' ? 0 : outstanding)} tone="gold" hint={l.status === 'renewed' ? 'Renewed — moved to new loan' : `${l.installments_left} installments left`} />
-        <Stat label="Collected · वसूल" value={money(l.collected_total)} tone="green" hint={`incl. ${money(l.advance_amount)} advance`} />
+        <Stat label="Collected · जमा" value={money(l.collected_total)} tone="green" hint={`incl. ${money(l.advance_amount)} advance`} />
         <Stat label="Overdue · बकाया" value={money(l.overdue)} tone={toNum(l.overdue) > 0 ? 'red' : undefined} hint={`${missedDays} missed day(s)` + (penaltyDue > 0 ? ` · + ${money(penaltyDue)} penalty` : '')} />
         <Stat label="To give · देना बाकी" value={money(pendingDisb)} tone={pendingDisb > 0 ? 'red' : undefined} hint={`Given ${money(l.disbursed)} of ${money(l.net_disbursable)}`} />
       </div>
@@ -317,7 +317,7 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
 
       <div className="grid-2">
         <Card
-          title={`Collections · वसूली (${reps.length})`}
+          title={`Collections · जमा (${reps.length})`}
           actions={
             <button className="btn btn-primary btn-sm" onClick={() => setModal('rep')}>+ Add collection</button>
           }

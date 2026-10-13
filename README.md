@@ -1,6 +1,6 @@
 # Bahi Khata CRM — Money-lending Admin Panel
 
-An admin panel for a daily-collection money-lending business (उधारी / वसूली), with staff salaries, daily expenses, day book and monthly reports. Every screen reads from the same ledger, so cash balances agree everywhere.
+An admin panel for a daily-collection money-lending business (उधारी / किस्त), with staff salaries, daily expenses, day book and monthly reports. Every screen reads from the same ledger, so cash balances agree everywhere.
 
 **Stack:** React 18 + Vite (frontend, deployed as a Render Static Site) · Supabase (Postgres, Auth, Row Level Security, Realtime). There is no separate backend server: the browser talks to Supabase directly, and RLS makes sure only admins can read or write.
 
@@ -12,7 +12,7 @@ An admin panel for a daily-collection money-lending business (उधारी / 
 |---|---|
 | **Login** | Email + password (Supabase Auth). Only users in the `admins` table get in. |
 | **Dashboard** | Cash in hand, money out in the market, overdue, money still to give, today's collection %, this month's numbers, top overdue (with a WhatsApp reminder button), recent entries. |
-| **Daily Collection** (रोज़ की वसूली) | One row per running loan for any date. Amount is pre-filled with the daily installment. Save one row or "Save all". Tabs: Not paid / Paid / Overdue. |
+| **Daily Collection** (रोज़ की किस्त) | One row per running loan for any date. Amount is pre-filled with the daily installment. Save one row or "Save all". Tabs: Not paid / Paid / Overdue. |
 | **Loans** (उधारी खाता) | All loans with progress, balance, overdue and end date. Filter, search, sort, CSV export. |
 | **New Loan** | Pick an existing borrower or add a new one, then the terms. **Every number is flexible**: auto-calculated fields can be overwritten, and "↺ auto" puts them back. A live *Hisaab* panel shows cash to give, amount to collect, number of installments, last date and profit. |
 | **Loan detail** | Terms, a day-by-day *khata* grid (paid / partial / missed), collections, money given in parts (e.g. 4,100 + 4,000), edit terms, settle, default, cancel, delete, print. |

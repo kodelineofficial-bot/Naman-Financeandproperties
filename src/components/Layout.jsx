@@ -12,7 +12,7 @@ const NAV = [
   { section: 'Overview' },
   { to: '/', label: 'Dashboard', hi: 'डैशबोर्ड', icon: '◧', end: true },
   { section: 'Lending · उधारी' },
-  { to: '/collection', label: 'Daily Collection', hi: 'रोज़ की वसूली', icon: '₹' },
+  { to: '/collection', label: 'Daily Collection', hi: 'रोज़ की किस्त', icon: '₹' },
   { to: '/loans', label: 'Loans', hi: 'उधारी खाता', icon: '▤' },
   { to: '/borrowers', label: 'Borrowers', hi: 'ग्राहक', icon: '☺' },
   { section: 'Books · हिसाब' },

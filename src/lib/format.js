@@ -161,7 +161,7 @@ export const EXPENSE_CATEGORIES = [
 ];
 
 export const LEDGER_KINDS = {
-  collection:       { label: 'Collection (वसूली)', short: 'Collection', dir: 'in' },
+  collection:       { label: 'Collection (जमा)', short: 'Collection', dir: 'in' },
   capital_in:       { label: 'Cash In (पूंजी)', short: 'Cash in', dir: 'in' },
   disbursement:     { label: 'Loan Given (उधार दिया)', short: 'Loan given', dir: 'out' },
   expense:          { label: 'Expense (खर्चा)', short: 'Expense', dir: 'out' },

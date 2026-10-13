@@ -10,7 +10,7 @@ import { useAction, useLoad } from '../lib/hooks.js';
 import { q, supabase } from '../lib/supabase.js';
 
 /**
- * Daily collection sheet (वसूली रजिस्टर).
+ * Daily collection sheet (किस्त रजिस्टर).
  * One row per running loan; type the amount received and save — single row or all at once.
  * A payment of several days (₹300 = 2 days of ₹150) fills that many days, so
  * the person shows as "paid in advance" on the next days instead of "not paid".
@@ -112,7 +112,7 @@ export default function Collection() {
 
   return (
     <>
-      <PageHeader title="Daily Collection" hindi="रोज़ की वसूली" subtitle={fmtDateFull(date)}>
+      <PageHeader title="Daily Collection" hindi="रोज़ की किस्त" subtitle={fmtDateFull(date)}>
         <div className="date-nav">
           <button className="btn" onClick={() => setDate(addDays(date, -1))}>‹ Yesterday</button>
           <input type="date" value={date} max={todayStr()} onChange={(e) => e.target.value && e.target.value <= todayStr() && setDate(e.target.value)} />
