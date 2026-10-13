@@ -33,7 +33,8 @@ export function parseDate(str) {
   return new Date(y, m - 1, d);
 }
 
-export const todayStr = () => toDateStr(new Date());
+// Always India date, even if the device clock/timezone is set to something else.
+export const todayStr = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
 export function addDays(str, n) {
   const d = parseDate(str);
@@ -66,6 +67,28 @@ export function fmtDate(str) {
 export function fmtDateShort(str) {
   if (!str) return '—';
   return parseDate(str).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+}
+
+/** "Tuesday, 13 October 2026" */
+export function fmtDateFull(str) {
+  if (!str) return '—';
+  return parseDate(str).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+/** "13 October 2026" */
+export function fmtDateLong(str) {
+  if (!str) return '—';
+  return parseDate(str).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+/** How many daily installments an amount covers, e.g. 600 @ 150 → "4 days · 4 दिन". */
+export function daysText(amount, daily) {
+  const a = toNum(amount);
+  const d = toNum(daily);
+  if (a <= 0 || d <= 0) return '';
+  const n = Math.round((a / d) * 10) / 10;
+  const s = Number.isInteger(n) ? String(n) : n.toFixed(1);
+  return n === 1 ? '1 day · 1 दिन' : `${s} days · ${s} दिन`;
 }
 
 export function fmtWeekday(str) {

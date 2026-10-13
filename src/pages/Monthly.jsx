@@ -141,9 +141,9 @@ export default function Monthly() {
                 </button>
               ))}
             </div>
-            <div className="khata-legend">
-              <span><i className="kc paid" /> In</span>
-              <span><i className="kc missed" /> Out</span>
+            <div className="cal-legend">
+              <span><i className="cal-dot st-paid" /> In</span>
+              <span><i className="cal-dot st-missed" /> Out</span>
               <span className="muted small">Click a month for details</span>
             </div>
           </Card>

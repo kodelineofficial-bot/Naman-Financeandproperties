@@ -21,6 +21,7 @@ const NAV = [
   { to: '/expenses', label: 'Expenses', hi: 'खर्चा', icon: '✎' },
   { to: '/cashbook', label: 'Cash In / Out', hi: 'पूंजी', icon: '⇅' },
   { section: 'Staff · कर्मचारी' },
+  { to: '/attendance', label: 'Attendance', hi: 'हाज़िरी', icon: '☑' },
   { to: '/employees', label: 'Employees', hi: 'कर्मचारी', icon: '♟' },
   { to: '/salary', label: 'Salary Report', hi: 'तनख्वाह', icon: '✓' },
   { section: '' },

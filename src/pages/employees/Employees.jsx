@@ -37,6 +37,7 @@ export default function Employees() {
   return (
     <>
       <PageHeader title="Employees" hindi="कर्मचारी" subtitle={`Staff, fixed salary and what is left to pay for ${fmtMonth(month)}`}>
+        <Link className="btn" to="/attendance">☑ Attendance · हाज़िरी</Link>
         <Link className="btn" to="/salary">Salary report</Link>
         <button className="btn btn-primary" onClick={() => setAdding(true)}>+ Add employee</button>
       </PageHeader>
@@ -74,7 +75,7 @@ export default function Employees() {
               <thead>
                 <tr>
                   <th>Name</th><th>Role</th><th>Phone</th><th>Joined</th>
-                  <th className="num">Salary</th><th className="num">Advance (this month)</th>
+                  <th className="num">Salary</th><th className="num">Absent days</th><th className="num">Advance (this month)</th>
                   <th className="num">Paid (this month)</th><th className="num">Balance</th>
                 </tr>
               </thead>
@@ -89,6 +90,7 @@ export default function Employees() {
                     <td>{e.phone || '—'}</td>
                     <td className="nowrap">{fmtDate(e.joining_date)}</td>
                     <td className="num">{money(e.monthly_salary)}</td>
+                    <td className="num">{e.month ? e.month.absent_days + (e.month.half_days ? ` + ${e.month.half_days} half` : '') : '—'}</td>
                     <td className="num amt-out">{money(e.month?.advances)}</td>
                     <td className="num">{money(e.month?.paid)}</td>
                     <td className={`num ${toNum(e.month?.balance) < 0 ? 'amt-out' : ''}`}><strong>{money(e.month?.balance)}</strong></td>

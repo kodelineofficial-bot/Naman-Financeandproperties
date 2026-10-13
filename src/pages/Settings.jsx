@@ -28,6 +28,7 @@ export default function Settings() {
         default_markup_pct: String(settings.default_markup_pct ?? 20),
         default_daily_per_10k: String(settings.default_daily_per_10k ?? 150),
         default_advance_days: String(settings.default_advance_days ?? 10),
+        attendance_cuts_salary: settings.attendance_cuts_salary ?? true,
       });
     }
   }, [settings, f]);
@@ -63,6 +64,7 @@ export default function Settings() {
               default_markup_pct: toNum(f.default_markup_pct),
               default_daily_per_10k: toNum(f.default_daily_per_10k),
               default_advance_days: Math.max(0, Math.round(toNum(f.default_advance_days))),
+              attendance_cuts_salary: !!f.attendance_cuts_salary,
             })
             .eq('id', 1),
         ),
@@ -114,6 +116,20 @@ export default function Settings() {
             </div>
           </Card>
         </div>
+        <Card title="Staff attendance · हाज़िरी">
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={!!f.attendance_cuts_salary}
+              onChange={(e) => setF({ ...f, attendance_cuts_salary: e.target.checked })}
+            />
+            Cut salary for absent days · छुट्टी (गैरहाज़िर) के पैसे काटें
+          </label>
+          <p className="muted small">
+            When on: 1 absent day = salary ÷ days in month (₹15,000 in a 30-day month = ₹500 per day). Half day = half of that.
+            “Leave” (paid leave) and days not marked are not cut.
+          </p>
+        </Card>
         <div className="form-actions left">
           <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save settings'}</button>
         </div>

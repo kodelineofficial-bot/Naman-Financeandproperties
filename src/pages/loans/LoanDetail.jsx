@@ -4,14 +4,15 @@ import { useToast } from '../../components/Toast.jsx';
 import {
   Card, Empty, ErrorBox, Field, Loading, Modal, ModeSelect, PageHeader, Progress, Stat, StatusBadge,
 } from '../../components/ui.jsx';
+import KhataCalendar from '../../components/KhataCalendar.jsx';
 import {
-  fmtDate, fmtDateShort, modeLabel, money, round2, sum, toNum, todayStr, whatsappLink,
+  addDays, daysText, fmtDate, fmtDateLong, fmtDateShort, modeLabel, money, round2, sum, toNum, todayStr, whatsappLink,
 } from '../../lib/format.js';
 import { buildLoanCalendar } from '../../lib/loanMath.js';
 import { useAction, useLoad } from '../../lib/hooks.js';
 import { q, supabase } from '../../lib/supabase.js';
 
-function EntryModal({ title, table, loanId, defaultAmount, max, onClose }) {
+function EntryModal({ title, table, loanId, defaultAmount, max, daily, collected, startDate, onClose }) {
   const toast = useToast();
   const [busy, run] = useAction(toast);
   const [f, setF] = useState({ paid_on: todayStr(), amount: defaultAmount ? String(defaultAmount) : '', mode: 'cash', note: '' });
@@ -33,9 +34,43 @@ function EntryModal({ title, table, loanId, defaultAmount, max, onClose }) {
       <form onSubmit={submit}>
         <div className="form-grid">
           <Field label="Date"><input type="date" required value={f.paid_on} onChange={(e) => setF({ ...f, paid_on: e.target.value })} /></Field>
-          <Field label="Amount (₹)">
-            <input type="number" min="0" step="any" required autoFocus value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} />
+          <Field label="Amount (₹) · रकम" hint={daily ? daysText(f.amount, daily) : undefined}>
+            <input className="input-big" type="number" inputMode="decimal" min="0" step="any" required autoFocus value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} />
           </Field>
+          {daily > 0 && (
+            <div className="span-2 quick-days">
+              <span className="field-label">How many days is this payment for? · कितने दिन का?</span>
+              <div className="btn-row">
+                {[1, 2, 3, 4, 7, 10, 15, 30].map((n) => (
+                  <button
+                    type="button"
+                    key={n}
+                    className={`btn btn-sm ${round2(f.amount) === round2(n * daily) ? 'btn-primary' : ''}`}
+                    onClick={() => setF({ ...f, amount: String(round2(Math.min(n * daily, max ?? Infinity))) })}
+                  >
+                    {n} {n === 1 ? 'day' : 'days'}
+                  </button>
+                ))}
+                {max > 0 && (
+                  <button type="button" className="btn btn-sm" onClick={() => setF({ ...f, amount: String(max) })}>
+                    Full balance {money(max)}
+                  </button>
+                )}
+              </div>
+              {toNum(f.amount) > 0 && (() => {
+                const full = Math.floor((toNum(collected) + round2(f.amount)) / daily + 1e-9);
+                return (
+                  <div className="good-note">
+                    {full >= 1 ? (
+                      <>After saving, paid till · यहाँ तक जमा: <strong>{fmtDateLong(addDays(startDate, full - 1))}</strong></>
+                    ) : (
+                      'Not a full day yet · अभी पूरा दिन नहीं'
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
           <Field label="Mode"><ModeSelect value={f.mode} onChange={(v) => setF({ ...f, mode: v })} /></Field>
           <Field label="Note"><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></Field>
         </div>
@@ -48,7 +83,7 @@ function EntryModal({ title, table, loanId, defaultAmount, max, onClose }) {
   );
 }
 
-function TxnTable({ rows, onDelete, empty }) {
+function TxnTable({ rows, onDelete, empty, daily }) {
   if (!rows.length) return <Empty>{empty}</Empty>;
   return (
     <div className="table-wrap">
@@ -60,7 +95,10 @@ function TxnTable({ rows, onDelete, empty }) {
           {rows.map((r) => (
             <tr key={r.id}>
               <td className="nowrap">{fmtDate(r.paid_on)}</td>
-              <td className="num"><strong>{money(r.amount)}</strong></td>
+              <td className="num">
+                <strong>{money(r.amount)}</strong>
+                {daily > 0 && <div className="muted small">{daysText(r.amount, daily)}</div>}
+              </td>
               <td>{modeLabel(r.mode)}</td>
               <td className="muted">{r.note || ''}</td>
               <td className="num">
@@ -95,8 +133,8 @@ export default function LoanDetail() {
   if (!data) return <ErrorBox error={error || new Error('Loan not found')} />;
 
   const { loan: l, disb, reps } = data;
-  const cells = buildLoanCalendar(l, reps, today);
-  const missedDays = cells.filter((c) => c.state === 'missed').length;
+  const cal = buildLoanCalendar(l, reps, today);
+  const missedDays = cal.counts.missed;
   const pendingDisb = toNum(l.pending_disbursement);
   const outstanding = toNum(l.outstanding);
   const wa = whatsappLink(
@@ -134,6 +172,9 @@ export default function LoanDetail() {
         subtitle={`${[l.borrower_occupation, l.borrower_phone, l.borrower_address].filter(Boolean).join(' · ') || '—'}`}
       >
         <StatusBadge status={l.status} />
+        {(l.status === 'active' || l.status === 'defaulted') && (
+          <button className="btn btn-primary btn-lg" onClick={() => setModal('rep')}>₹ Take payment · पैसे लिए</button>
+        )}
         {wa && <a className="btn btn-wa" href={wa} target="_blank" rel="noreferrer">WhatsApp</a>}
         <Link className="btn" to={`/borrowers/${l.borrower_id}`}>Borrower</Link>
         <Link className="btn" to={`/loans/${id}/edit`}>Edit terms</Link>
@@ -154,47 +195,19 @@ export default function LoanDetail() {
           <strong>{l.progress_pct}%</strong>
         </div>
         <Progress pct={l.progress_pct} />
+        <div className="paid-till">
+          {cal.paidTill ? (
+            <>Paid till · यहाँ तक जमा: <strong>{fmtDateLong(cal.paidTill)}</strong></>
+          ) : (
+            <>No day paid yet · अभी कोई दिन जमा नहीं</>
+          )}
+          <span className="muted"> · Collection {fmtDateLong(l.collection_start_date)} → {fmtDateLong(l.expected_end_date)} ({cal.nDays} days)</span>
+        </div>
       </Card>
 
-      <div className="grid-2">
-        <Card title="Loan terms · शर्तें">
-          <div className="kv-list">
-            <div><span>Loan date</span><strong>{fmtDate(l.loan_date)}</strong></div>
-            <div><span>Loan amount (principal)</span><strong>{money(l.principal)}</strong></div>
-            <div><span>Interest cut upfront ({toNum(l.interest_pct)}%)</span><strong>{money(l.interest_amount)}</strong></div>
-            <div><span>Advance kept ({l.advance_days} days)</span><strong>{money(l.advance_amount)}</strong></div>
-            <div className="kv-total"><span>Net cash to give</span><strong>{money(l.net_disbursable)}</strong></div>
-            <div><span>Daily installment</span><strong>{money(l.daily_installment)}</strong></div>
-            <div><span>Total repayable ({l.duration_days} days)</span><strong>{money(l.total_repayable)}</strong></div>
-            <div><span>Collection</span><strong>{fmtDate(l.collection_start_date)} → {fmtDate(l.expected_end_date)}</strong></div>
-            <div><span>Expected by today</span><strong>{money(l.expected_till_today)}</strong></div>
-            <div><span>Last payment</span><strong>{fmtDate(l.last_paid_on)}</strong></div>
-            <div><span>Expected profit</span><strong className="amt-in">{money(l.expected_profit)}</strong></div>
-            {l.closed_on && <div><span>Closed on</span><strong>{fmtDate(l.closed_on)}</strong></div>}
-          </div>
-          {l.notes && <p className="note-box">{l.notes}</p>}
-        </Card>
-
-        <Card title="Khata · day by day" actions={<span className="muted small">{cells.length} days</span>}>
-          <div className="khata-legend">
-            <span><i className="kc paid" /> Paid</span>
-            <span><i className="kc partial" /> Partial</span>
-            <span><i className="kc missed" /> Missed</span>
-            <span><i className="kc future" /> Upcoming</span>
-          </div>
-          <div className="khata-grid">
-            {cells.map((c) => (
-              <div
-                key={c.date}
-                className={`kc ${c.state} ${c.date === today ? 'today' : ''}`}
-                title={`${fmtDate(c.date)} — ${c.paid ? money(c.paid) : c.state === 'future' ? 'upcoming' : 'not paid'}`}
-              >
-                {Number(c.date.slice(8))}
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
+      <Card title="Khata calendar · रोज़ का हिसाब" actions={<span className="muted small">{cal.nDays} collection days</span>}>
+        <KhataCalendar cal={cal} today={today} />
+      </Card>
 
       <div className="grid-2">
         <Card
@@ -207,7 +220,7 @@ export default function LoanDetail() {
           <div className="card-sub muted small">
             Cash collected: <strong>{money(l.collected_cash)}</strong> · Advance: <strong>{money(l.advance_amount)}</strong>
           </div>
-          <TxnTable rows={reps} onDelete={(r) => del('loan_repayments', r)} empty="No collections yet." />
+          <TxnTable rows={reps} daily={toNum(l.daily_installment)} onDelete={(r) => del('loan_repayments', r)} empty="No collections yet." />
         </Card>
         <Card
           title={`Money given · दिया (${disb.length})`}
@@ -223,24 +236,47 @@ export default function LoanDetail() {
         </Card>
       </div>
 
-      <Card title="Actions">
-        <div className="btn-row">
-          {l.status === 'active' && <button className="btn" disabled={busy} onClick={() => setStatus('closed')}>Settle / close now</button>}
-          {l.status === 'active' && <button className="btn btn-danger-outline" disabled={busy} onClick={() => setStatus('defaulted')}>Mark defaulted</button>}
-          {l.status !== 'active' && <button className="btn" disabled={busy} onClick={() => setStatus('active')}>Re-open as active</button>}
-          {l.status !== 'cancelled' && <button className="btn btn-danger-outline" disabled={busy} onClick={() => setStatus('cancelled')}>Cancel loan</button>}
-          <button className="btn btn-danger" disabled={busy} onClick={deleteLoan}>Delete loan</button>
-        </div>
-        <p className="muted small">Loans close automatically when the full amount is collected. Deleting removes all its entries from every report.</p>
-      </Card>
+      <div className="grid-2">
+        <Card title="Loan terms · शर्तें">
+          <div className="kv-list">
+            <div><span>Loan date</span><strong>{fmtDate(l.loan_date)}</strong></div>
+            <div><span>Loan amount (principal)</span><strong>{money(l.principal)}</strong></div>
+            <div><span>Interest cut upfront ({toNum(l.interest_pct)}%)</span><strong>{money(l.interest_amount)}</strong></div>
+            <div><span>Advance kept ({l.advance_days} days)</span><strong>{money(l.advance_amount)}</strong></div>
+            <div className="kv-total"><span>Net cash to give</span><strong>{money(l.net_disbursable)}</strong></div>
+            <div><span>Daily installment</span><strong>{money(l.daily_installment)}</strong></div>
+            <div><span>Total repayable ({l.duration_days} days)</span><strong>{money(l.total_repayable)}</strong></div>
+            <div><span>Collection</span><strong>{fmtDateLong(l.collection_start_date)} → {fmtDateLong(l.expected_end_date)}</strong></div>
+            <div><span>Expected by today</span><strong>{money(l.expected_till_today)}</strong></div>
+            <div><span>Last payment</span><strong>{fmtDate(l.last_paid_on)}</strong></div>
+            <div><span>Expected profit</span><strong className="amt-in">{money(l.expected_profit)}</strong></div>
+            {l.closed_on && <div><span>Closed on</span><strong>{fmtDate(l.closed_on)}</strong></div>}
+          </div>
+          {l.notes && <p className="note-box">{l.notes}</p>}
+        </Card>
+
+        <Card title="Actions">
+          <div className="btn-row">
+            {l.status === 'active' && <button className="btn" disabled={busy} onClick={() => setStatus('closed')}>Settle / close now</button>}
+            {l.status === 'active' && <button className="btn btn-danger-outline" disabled={busy} onClick={() => setStatus('defaulted')}>Mark defaulted</button>}
+            {l.status !== 'active' && <button className="btn" disabled={busy} onClick={() => setStatus('active')}>Re-open as active</button>}
+            {l.status !== 'cancelled' && <button className="btn btn-danger-outline" disabled={busy} onClick={() => setStatus('cancelled')}>Cancel loan</button>}
+            <button className="btn btn-danger" disabled={busy} onClick={deleteLoan}>Delete loan</button>
+          </div>
+          <p className="muted small">Loans close automatically when the full amount is collected. Deleting removes all its entries from every report.</p>
+        </Card>
+      </div>
 
       {modal === 'rep' && (
         <EntryModal
-          title={`Add collection — ${l.borrower_name}`}
+          title={`Take payment · पैसे लिए — ${l.borrower_name}`}
           table="loan_repayments"
           loanId={id}
           defaultAmount={Math.min(toNum(l.daily_installment), outstanding) || ''}
           max={outstanding}
+          daily={toNum(l.daily_installment)}
+          collected={l.collected_cash}
+          startDate={l.collection_start_date}
           onClose={() => setModal(null)}
         />
       )}

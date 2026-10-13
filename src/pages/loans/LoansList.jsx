@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, Empty, ErrorBox, Loading, PageHeader, Progress, SearchInput, Stat, StatusBadge, Tabs } from '../../components/ui.jsx';
-import { downloadCSV, fmtDate, fmtDateShort, money, sum, toNum, todayStr } from '../../lib/format.js';
+import { downloadCSV, fmtDate, money, sum, toNum, todayStr } from '../../lib/format.js';
 import { useLoad } from '../../lib/hooks.js';
 import { q, supabase } from '../../lib/supabase.js';
 
@@ -125,7 +125,7 @@ export default function LoansList() {
                   <th style={{ minWidth: 140 }}>Collected</th>
                   <th className="num">Balance</th>
                   <th className="num">Overdue</th>
-                  <th>Ends</th>
+                  <th>Paid till / Ends</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -150,7 +150,10 @@ export default function LoansList() {
                     </td>
                     <td className="num"><strong>{money(l.outstanding)}</strong></td>
                     <td className={`num ${l.overdue > 0 ? 'amt-out' : 'muted'}`}>{money(l.overdue)}</td>
-                    <td className="nowrap">{fmtDateShort(l.expected_end_date)}</td>
+                    <td className="nowrap">
+                      <div className="small">Paid till: <strong>{l.paid_till ? fmtDate(l.paid_till) : '—'}</strong></div>
+                      <div className="small muted">Ends: {fmtDate(l.expected_end_date)}</div>
+                    </td>
                     <td><StatusBadge status={l.status} /></td>
                   </tr>
                 ))}

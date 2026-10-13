@@ -1,4 +1,4 @@
-import { addDays, round2, toNum } from './format.js';
+import { addDays, monthStart, round2, toNum } from './format.js';
 
 /**
  * Derive every loan number from the form inputs.
@@ -85,36 +85,82 @@ export function deriveLoan(f, ov, dailyPer10k = 150) {
 }
 
 /**
- * Day-by-day khata for one loan: for each day from collection start,
- * how much was due vs paid. Used for the colour grid on the loan page.
+ * Day-by-day khata for one loan.
+ *
+ * All cash collected is used to fill the schedule day by day, oldest day first.
+ * So with ₹150/day, a ₹300 payment fills 2 days and ₹600 fills 4 days — and
+ * a late payment fills the days that were missed before it.
+ *
+ * Returns
+ *   days     : [{ date, due, covered, received, state, inSchedule }]
+ *              state = paid | partial | missed | advance | future | off
+ *   months   : [{ month: 'YYYY-MM-01', days: [...] }]  (every date of each month)
+ *   paidTill : last date that is fully paid (or null)
+ *   counts   : { paid, partial, missed, advance, future }
  */
 export function buildLoanCalendar(loan, repayments, today) {
-  const byDate = {};
-  for (const r of repayments) byDate[r.paid_on] = (byDate[r.paid_on] || 0) + toNum(r.amount);
+  const daily = toNum(loan.daily_installment);
+  const toCollect = Math.max(0, toNum(loan.total_repayable) - toNum(loan.advance_amount));
+  const nDays = daily > 0 ? Math.ceil(toCollect / daily - 1e-9) : 0;
+
+  const received = {};
+  let pool = 0;
+  for (const r of repayments) {
+    received[r.paid_on] = round2((received[r.paid_on] || 0) + toNum(r.amount));
+    pool += toNum(r.amount);
+  }
+  pool = round2(pool);
 
   const start = loan.collection_start_date;
-  const end = loan.expected_end_date;
-  const lastPaid = repayments.reduce((m, r) => (r.paid_on > m ? r.paid_on : m), '');
+  const schedule = {};
+  let paidTill = null;
+  const counts = { paid: 0, partial: 0, missed: 0, advance: 0, future: 0 };
+  for (let i = 0; i < nDays; i++) {
+    const date = addDays(start, i);
+    const due = round2(Math.min(daily, toCollect - daily * i));
+    const covered = round2(Math.min(due, Math.max(0, pool)));
+    pool = round2(pool - covered);
+    let state;
+    if (covered >= due - 0.001) state = date > today ? 'advance' : 'paid';
+    else if (covered > 0) state = 'partial';
+    else state = date > today ? 'future' : 'missed';
+    if (state === 'paid' || state === 'advance') paidTill = date;
+    counts[state] += 1;
+    schedule[date] = { due, covered, state };
+  }
+  const end = nDays > 0 ? addDays(start, nDays - 1) : start;
+
+  // Show whole months, from the first payment/start up to the end / last payment.
+  const dates = Object.keys(received);
+  let first = start;
   let last = end;
-  if (today > last) last = today;
-  if (lastPaid > last) last = lastPaid;
-  if (loan.status !== 'active' && loan.status !== 'defaulted') {
-    last = lastPaid && lastPaid > end ? lastPaid : end;
+  for (const d of dates) {
+    if (d < first) first = d;
+    if (d > last) last = d;
   }
 
-  const cells = [];
-  let d = start;
-  let guard = 0;
-  while (d <= last && guard < 500) {
-    const paid = byDate[d] || 0;
-    let state;
-    if (d > today) state = 'future';
-    else if (paid >= toNum(loan.daily_installment)) state = 'paid';
-    else if (paid > 0) state = 'partial';
-    else state = 'missed';
-    cells.push({ date: d, paid, state });
-    d = addDays(d, 1);
-    guard++;
+  const months = [];
+  const days = [];
+  for (let m = monthStart(first); m <= last; ) {
+    const md = [];
+    let d = m;
+    while (d.slice(0, 7) === m.slice(0, 7)) {
+      const s = schedule[d];
+      const cell = {
+        date: d,
+        due: s?.due || 0,
+        covered: s?.covered || 0,
+        received: received[d] || 0,
+        state: s ? s.state : 'off',
+        inSchedule: !!s,
+      };
+      md.push(cell);
+      if (s) days.push(cell);
+      d = addDays(d, 1);
+    }
+    months.push({ month: m, days: md });
+    m = d; // first day of the next month
   }
-  return cells;
+
+  return { days, months, paidTill, counts, nDays, start, end, extra: Math.max(0, pool) };
 }

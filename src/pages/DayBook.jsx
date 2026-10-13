@@ -2,7 +2,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useToast } from '../components/Toast.jsx';
 import { Amount, Card, Empty, ErrorBox, Loading, PageHeader, Stat } from '../components/ui.jsx';
 import { deleteLedgerEntry, getLedger, getOpeningOn } from '../lib/api.js';
-import { LEDGER_KINDS, addDays, fmtDate, fmtWeekday, modeLabel, money, round2, sum, toNum, todayStr } from '../lib/format.js';
+import { LEDGER_KINDS, addDays, fmtDateFull, modeLabel, money, round2, sum, toNum, todayStr } from '../lib/format.js';
 import { useAction, useLoad } from '../lib/hooks.js';
 import { q, supabase } from '../lib/supabase.js';
 
@@ -54,7 +54,7 @@ export default function DayBook() {
   const setDate = (d) => setParams({ date: d }, { replace: true });
 
   const { data, loading, error } = useLoad(async () => {
-    const [opening, entries, newLoans, dueLoans, paidRows] = await Promise.all([
+    const [opening, entries, newLoans, sheet] = await Promise.all([
       getOpeningOn(date),
       getLedger(date, date),
       q(
@@ -64,17 +64,12 @@ export default function DayBook() {
           .eq('loan_date', date)
           .neq('status', 'cancelled'),
       ),
-      q(
-        supabase
-          .from('loan_summary')
-          .select('id,loan_no,borrower_name,borrower_phone,daily_installment,outstanding,overdue')
-          .in('status', ['active', 'defaulted'])
-          .lte('collection_start_date', date),
-      ),
-      q(supabase.from('loan_repayments').select('loan_id').eq('paid_on', date)),
+      q(supabase.rpc('collection_sheet', { p_date: date })),
     ]);
-    const paidSet = new Set(paidRows.map((r) => r.loan_id));
-    const missed = dueLoans.filter((l) => !paidSet.has(l.id) && toNum(l.outstanding) > 0);
+    // Did not pay = nothing paid this day AND not already covered in advance up to this day.
+    const missed = sheet.filter(
+      (l) => toNum(l.paid_on_date) === 0 && toNum(l.balance_upto) > 0 && (!l.paid_till || l.paid_till < date),
+    );
     return { opening, entries, newLoans, missed };
   }, [date]);
 
@@ -96,7 +91,7 @@ export default function DayBook() {
 
   return (
     <>
-      <PageHeader title="Day Book" hindi="रोज़नामचा" subtitle={`${fmtWeekday(date)}, ${fmtDate(date)} — full detail of the day`}>
+      <PageHeader title="Day Book" hindi="रोज़नामचा" subtitle={`${fmtDateFull(date)} — full detail of the day`}>
         <div className="date-nav">
           <button className="btn btn-sm" onClick={() => setDate(addDays(date, -1))}>‹ Prev</button>
           <input type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
@@ -177,7 +172,7 @@ export default function DayBook() {
               ) : (
                 <table className="table">
                   <thead>
-                    <tr><th>Borrower</th><th className="num">Daily</th><th className="num">Overdue (today)</th></tr>
+                    <tr><th>Borrower</th><th className="num">Daily</th><th className="num">Behind (as of this day)</th></tr>
                   </thead>
                   <tbody>
                     {data.missed.map((l) => (
@@ -187,7 +182,7 @@ export default function DayBook() {
                           <div className="muted small">#{l.loan_no} · {l.borrower_phone || '—'}</div>
                         </td>
                         <td className="num">{money(l.daily_installment)}</td>
-                        <td className="num amt-out">{money(l.overdue)}</td>
+                        <td className="num amt-out">{money(l.short_upto)}</td>
                       </tr>
                     ))}
                   </tbody>

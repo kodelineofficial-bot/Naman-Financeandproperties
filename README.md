@@ -63,7 +63,7 @@ When you edit or delete any entry, every report changes with it. Supabase Realti
 
 ### 1. Supabase
 1. Create a project at https://supabase.com and choose region **Mumbai (ap-south-1)**.
-2. **SQL Editor → New query**: paste all of `supabase/migrations/001_schema.sql` and click **Run**.
+2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql`, `002_security_hardening.sql`, `003_multiday_and_attendance.sql`).
 3. *(Optional demo data)* Run `supabase/seed.sql`.
 4. **Authentication → Users → Add user**: enter the owner's email and password, and tick *Auto confirm*.
 5. Make that user an admin (SQL Editor):
@@ -97,6 +97,8 @@ To add more staff logins later, repeat steps 1.4 and 1.5.
 ```
 supabase/
   migrations/001_schema.sql   tables, views, triggers, RLS, realtime
+  migrations/002_security_hardening.sql   advisor fixes
+  migrations/003_multiday_and_attendance.sql   multi-day payments (paid till), collection sheet, staff attendance
   seed.sql                    optional demo data
 src/
   lib/        supabase client, formatting, loan maths, data hooks

@@ -2,7 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Amount, Card, Empty, ErrorBox, Loading, PageHeader, Stat } from '../components/ui.jsx';
 import { getBalanceAsOf } from '../lib/api.js';
 import {
-  LEDGER_KINDS, fmtDate, fmtDateShort, fmtMonth, money, monthStart, sum, toNum, todayStr, whatsappLink,
+  LEDGER_KINDS, fmtDateFull, fmtDateShort, fmtMonth, money, monthStart, sum, toNum, todayStr, whatsappLink,
 } from '../lib/format.js';
 import { useLoad } from '../lib/hooks.js';
 import { q, supabase } from '../lib/supabase.js';
@@ -20,7 +20,7 @@ export default function Dashboard() {
         supabase
           .from('loan_summary')
           .select(
-            'id,loan_no,borrower_name,borrower_phone,daily_installment,outstanding,overdue,pending_disbursement,paid_today,status,collection_start_date,last_paid_on,principal',
+            'id,loan_no,borrower_name,borrower_phone,daily_installment,outstanding,overdue,pending_disbursement,paid_today,status,collection_start_date,last_paid_on,principal,paid_till',
           )
           .in('status', ['active', 'defaulted']),
       ),
@@ -37,8 +37,14 @@ export default function Dashboard() {
       ),
     ]);
 
+    // Due today = running loan that was not already covered (paid in advance) before today.
+    const coveredAhead = (l) => toNum(l.paid_today) === 0 && l.paid_till && l.paid_till >= today;
     const dueToday = loans.filter(
-      (l) => l.status === 'active' && l.collection_start_date <= today && toNum(l.outstanding) > 0,
+      (l) =>
+        l.status === 'active' &&
+        l.collection_start_date <= today &&
+        (toNum(l.outstanding) > 0 || toNum(l.paid_today) > 0) &&
+        !coveredAhead(l),
     );
     return {
       balance,
@@ -67,12 +73,15 @@ export default function Dashboard() {
 
   return (
     <>
-      <PageHeader title="Dashboard" hindi="डैशबोर्ड" subtitle={fmtDate(today)}>
+      <PageHeader title="Dashboard" hindi="डैशबोर्ड" subtitle={fmtDateFull(today)}>
         <Link to="/collection" className="btn btn-primary">
           ₹ Collect today
         </Link>
         <Link to="/loans/new" className="btn">
           + New loan
+        </Link>
+        <Link to="/attendance" className="btn">
+          ☑ Attendance
         </Link>
       </PageHeader>
       <ErrorBox error={error} />

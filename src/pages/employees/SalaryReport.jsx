@@ -17,7 +17,7 @@ export default function SalaryReport() {
 
   return (
     <>
-      <PageHeader title="Salary Report" hindi="तनख्वाह रिपोर्ट" subtitle={`${fmtMonth(month)} — salary minus advances minus already paid`}>
+      <PageHeader title="Salary Report" hindi="तनख्वाह रिपोर्ट" subtitle={`${fmtMonth(month)} — salary minus absent days minus advances minus already paid`}>
         <div className="date-nav">
           <button className="btn btn-sm" onClick={() => setMonth(addMonths(month, -1))}>‹</button>
           <input type="month" value={month.slice(0, 7)} onChange={(e) => e.target.value && setMonth(`${e.target.value}-01`)} />
@@ -29,18 +29,22 @@ export default function SalaryReport() {
           onClick={() =>
             downloadCSV(`salary-${month.slice(0, 7)}.csv`, rows, [
               { key: 'name', label: 'Name' }, { key: 'designation', label: 'Role' }, { key: 'monthly_salary', label: 'Salary' },
+              { key: 'present_days', label: 'Present' }, { key: 'absent_days', label: 'Absent' },
+              { key: 'half_days', label: 'Half days' }, { key: 'leave_days', label: 'Leave' },
+              { key: 'absent_cut', label: 'Absent cut' },
               { key: 'advances', label: 'Advances' }, { key: 'paid', label: 'Paid' }, { key: 'balance', label: 'Balance' },
             ])
           }
         >
           ⬇ Export
         </button>
+        <Link className="btn" to="/attendance">Attendance</Link>
         <button className="btn" onClick={() => window.print()}>Print</button>
       </PageHeader>
 
       <div className="stats">
         <Stat label="Total salary" value={money(sum(rows, 'monthly_salary'))} hint={`${rows.length} employees`} />
-        <Stat label="Advances cut" value={money(sum(rows, 'advances'))} tone="red" />
+        <Stat label="Absent + advances cut" value={money(sum(rows, 'absent_cut') + sum(rows, 'advances'))} tone="red" hint={`Absent ${money(sum(rows, 'absent_cut'))} · Advance ${money(sum(rows, 'advances'))}`} />
         <Stat label="Already paid" value={money(sum(rows, 'paid'))} />
         <Stat label="Left to pay" value={money(sum(due, 'balance'))} tone="gold" hint={`${due.length} people`} />
       </div>
@@ -56,7 +60,7 @@ export default function SalaryReport() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Employee</th><th className="num">Fixed salary</th><th className="num">− Advance / loan</th>
+                  <th>Employee</th><th className="num">Fixed salary</th><th className="num">Days P / A / ½ / L</th><th className="num">− Absent cut</th><th className="num">− Advance / loan</th>
                   <th className="num">− Paid</th><th className="num">= Balance</th><th className="no-print" />
                 </tr>
               </thead>
@@ -70,6 +74,10 @@ export default function SalaryReport() {
                         <div className="muted small">{r.designation || ''}{!r.is_active ? ' · left' : ''}</div>
                       </td>
                       <td className="num">{money(r.monthly_salary)}</td>
+                      <td className="num nowrap">
+                        <span className="amt-in">{r.present_days}</span> / <span className="amt-out">{r.absent_days}</span> / {r.half_days} / {r.leave_days}
+                      </td>
+                      <td className="num amt-out">{toNum(r.absent_cut) ? money(r.absent_cut) : '—'}</td>
                       <td className="num amt-out">{toNum(r.advances) ? money(r.advances) : '—'}</td>
                       <td className="num">{toNum(r.paid) ? money(r.paid) : '—'}</td>
                       <td className={`num ${bal > 0 ? 'amt-warn' : bal < 0 ? 'amt-out' : 'amt-in'}`}>
@@ -91,6 +99,8 @@ export default function SalaryReport() {
                 <tr>
                   <td>Total</td>
                   <td className="num">{money(sum(rows, 'monthly_salary'))}</td>
+                  <td />
+                  <td className="num">{money(sum(rows, 'absent_cut'))}</td>
                   <td className="num">{money(sum(rows, 'advances'))}</td>
                   <td className="num">{money(sum(rows, 'paid'))}</td>
                   <td className="num">{money(sum(rows, 'balance'))}</td>

@@ -21,6 +21,7 @@ import CashBook from './pages/CashBook.jsx';
 import Employees from './pages/employees/Employees.jsx';
 import EmployeeDetail from './pages/employees/EmployeeDetail.jsx';
 import SalaryReport from './pages/employees/SalaryReport.jsx';
+import Attendance from './pages/employees/Attendance.jsx';
 import Settings from './pages/Settings.jsx';
 
 function SetupNotice() {
@@ -96,6 +97,7 @@ export default function App() {
         <Route path="employees" element={<Employees />} />
         <Route path="employees/:id" element={<EmployeeDetail />} />
         <Route path="salary" element={<SalaryReport />} />
+        <Route path="attendance" element={<Attendance />} />
         <Route path="settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

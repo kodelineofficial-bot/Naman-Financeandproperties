@@ -4,7 +4,7 @@ import { useToast } from '../../components/Toast.jsx';
 import { Card, ErrorBox, Field, Loading, ModeSelect, PageHeader } from '../../components/ui.jsx';
 import { useSettings } from '../../context/SettingsContext.jsx';
 import { getBorrowers } from '../../lib/api.js';
-import { fmtDate, money, round2, toNum, todayStr } from '../../lib/format.js';
+import { fmtDateLong, money, round2, toNum, todayStr } from '../../lib/format.js';
 import { deriveLoan } from '../../lib/loanMath.js';
 import { useAction, useLoad } from '../../lib/hooks.js';
 import { q, supabase } from '../../lib/supabase.js';
@@ -328,7 +328,8 @@ export default function LoanForm() {
             <div className="calc-row minus"><span>− Already kept as advance</span><strong>{money(d.advance_amount)}</strong></div>
             <div className="calc-row total"><span>To collect daily (लेना)</span><strong>{money(d.toCollect)}</strong></div>
             <div className="calc-row"><span>Installments left</span><strong>{d.collectDays}</strong></div>
-            <div className="calc-row"><span>Last collection</span><strong>{d.endDate ? fmtDate(d.endDate) : '—'}</strong></div>
+            <div className="calc-row"><span>First collection</span><strong>{fmtDateLong(form.collection_start_date)}</strong></div>
+            <div className="calc-row"><span>Last collection</span><strong>{d.endDate ? fmtDateLong(d.endDate) : '—'}</strong></div>
 
             <div className="calc-sep" />
             <div className="calc-row profit"><span>Expected profit</span><strong>{money(d.profit)}</strong></div>
