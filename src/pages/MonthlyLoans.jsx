@@ -56,7 +56,9 @@ export default function MonthlyLoans() {
         const paidInMonth = round2(sum(reps.filter((r) => r.paid_on >= mStart && r.paid_on <= mEnd && r.mode !== 'renewal'), 'amount'));
         const upToEnd = round2(sum(reps.filter((r) => r.paid_on <= mEnd), 'amount'));
         const balanceBefore = Math.max(0, round2(toCollect - before));
-        const owed = (d) => Math.max(0, round2(Math.min(balanceBefore, periodsDue('monthly', l.collection_start_date, d) * inst - adv - before)));
+        // A defaulted loan is frozen: nothing new falls due from the day it was defaulted.
+        const frozen = l.status === 'defaulted' && l.defaulted_on ? addDays(l.defaulted_on, -1) : null;
+        const owed = (d) => Math.max(0, round2(Math.min(balanceBefore, periodsDue('monthly', l.collection_start_date, frozen && frozen < d ? frozen : d) * inst - adv - before)));
         const due = owed(mEnd);
         const carried = owed(addDays(mStart, -1));
         const nInMonth = periodsDue('monthly', l.collection_start_date, mEnd);

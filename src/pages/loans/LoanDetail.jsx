@@ -6,7 +6,7 @@ import KhataCalendar from '../../components/KhataCalendar.jsx';
 import WhatsAppButton from '../../components/WhatsAppButton.jsx';
 import { useSettings } from '../../context/SettingsContext.jsx';
 import {
-  fmtDate, fmtDateLong, fmtDateShort, modeLabel, money, round2, sum, toNum, todayStr,
+  addDays, fmtDate, fmtDateLong, fmtDateShort, modeLabel, money, round2, sum, toNum, todayStr,
 } from '../../lib/format.js';
 import { FREQ, buildLoanCalendar, freqOf, periodDate, periodsText } from '../../lib/loanMath.js';
 import { useAction, useLoad } from '../../lib/hooks.js';
@@ -208,7 +208,9 @@ export default function LoanDetail() {
   const F = freqOf(l);
   const monthly = l.frequency === 'monthly';
   const inst = toNum(l.daily_installment);
-  const cal = buildLoanCalendar(l, reps, today);
+  const defaulted = l.status === 'defaulted' && !!l.defaulted_on;
+  // A defaulted loan is frozen: nothing new falls due from the day it was defaulted.
+  const cal = buildLoanCalendar(l, reps, defaulted && addDays(l.defaulted_on, -1) < today ? addDays(l.defaulted_on, -1) : today);
   // The advance kept at loan time is part of what the borrower paid, so it is shown in the
   // history too — dated with the first cash payout, the same day the cash book shows it.
   const firstPayout = disb
@@ -246,8 +248,17 @@ export default function LoanDetail() {
   }
 
   async function setStatus(status) {
-    const labels = { defaulted: 'mark this loan as DEFAULTED', active: 're-open this loan', cancelled: 'CANCEL this loan', closed: 'close / settle this loan now' };
-    if (!window.confirm(`Are you sure you want to ${labels[status]}?`)) return;
+    const labels = {
+      defaulted: `mark this loan as DEFAULTED?\n\nThe loan stops here: balance stays ${money(outstanding)}, no new installments fall due and no new penalty.` +
+        (penaltyDue > 0 ? ` Penalty due ${money(penaltyDue)} will be waived (माफ़).` : '') +
+        '\nLater: take the full balance to settle, or Resume to continue from where it stopped.',
+      active: l.status === 'defaulted'
+        ? `RESUME this loan?\n\nThe schedule moves forward by the ${l.defaulted_on ? Math.max(0, Math.round((new Date(today) - new Date(l.defaulted_on)) / 864e5)) : 0} day(s) it was defaulted — collection continues from the installment where it stopped.`
+        : 're-open this loan?',
+      cancelled: 'CANCEL this loan?',
+      closed: 'close / settle this loan now?',
+    };
+    if (!window.confirm(`Are you sure you want to ${labels[status]}`)) return;
     await run(
       () => q(supabase.from('loans').update({ status, closed_on: status === 'closed' ? today : null }).eq('id', id)),
       'Status updated',
@@ -280,8 +291,14 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
         subtitle={`${[l.borrower_occupation, l.borrower_phone, l.borrower_address].filter(Boolean).join(' · ') || '—'}`}
       >
         <StatusBadge status={l.status} />
-        {(l.status === 'active' || l.status === 'defaulted') && (
+        {l.status === 'active' && (
           <button className="btn btn-primary btn-lg" onClick={() => setModal('rep')}>₹ Take payment · पैसे लिए</button>
+        )}
+        {l.status === 'defaulted' && (
+          <>
+            <button className="btn btn-primary btn-lg" onClick={() => setModal('settle')}>₹ Settle · पूरा पैसा</button>
+            <button className="btn btn-lg" disabled={busy} onClick={() => setStatus('active')}>▶ Resume · फिर से चालू</button>
+          </>
         )}
         <WhatsAppButton loan={l} />
         {isRunning && (
@@ -322,6 +339,15 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
         </div>
       )}
 
+      {defaulted && (
+        <p className="note-box">
+          <strong>Defaulted on {fmtDate(l.defaulted_on)}</strong> — loan is stopped: balance stays {money(outstanding)}, no new installments
+          and no penalty. Take the full balance (<strong>Settle</strong>) or <strong>Resume</strong> to continue from where it stopped.
+        </p>
+      )}
+      {toNum(l.paused_days) > 0 && !defaulted && (
+        <p className="muted small">Schedule moved {l.paused_days} day(s) forward for the time this loan was defaulted.</p>
+      )}
       <div className="stats">
         <Stat label="Balance · बाकी" value={money(l.status === 'renewed' ? 0 : outstanding)} tone="gold" hint={l.status === 'renewed' ? 'Renewed — moved to new loan' : `${l.installments_left} installments left`} />
         <Stat label="Collected · जमा" value={money(l.collected_total)} tone="green" hint={`incl. ${money(l.advance_amount)} advance`} />
@@ -494,7 +520,8 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
           <div className="btn-row">
             {l.status === 'active' && <button className="btn" disabled={busy} onClick={() => setStatus('closed')}>Settle / close now</button>}
             {l.status === 'active' && <button className="btn btn-danger-outline" disabled={busy} onClick={() => setStatus('defaulted')}>Mark defaulted</button>}
-            {l.status !== 'active' && l.status !== 'renewed' && <button className="btn" disabled={busy} onClick={() => setStatus('active')}>Re-open as active</button>}
+            {l.status === 'defaulted' && <button className="btn" disabled={busy} onClick={() => setStatus('active')}>▶ Resume · फिर से चालू</button>}
+            {l.status !== 'active' && l.status !== 'renewed' && l.status !== 'defaulted' && <button className="btn" disabled={busy} onClick={() => setStatus('active')}>Re-open as active</button>}
             {isRunning && <Link className="btn" to={`/loans/new?renew=${id}`}>🔁 Renew · नया loan</Link>}
             {l.status !== 'cancelled' && l.status !== 'renewed' && <button className="btn btn-danger-outline" disabled={busy} onClick={() => setStatus('cancelled')}>Cancel loan</button>}
             <button className="btn btn-danger" disabled={busy} onClick={deleteLoan}>Delete loan</button>
@@ -510,6 +537,20 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
           loanId={id}
           // Due now = this installment + anything short from before (it carries forward).
           defaultAmount={Math.min(toNum(l.overdue) > 0 ? toNum(l.overdue) : inst, outstanding) || ''}
+          max={outstanding}
+          daily={inst}
+          freq={l.frequency}
+          collected={l.collected_total}
+          startDate={l.collection_start_date}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal === 'settle' && (
+        <EntryModal
+          title={`Settle · पूरा पैसा — ${l.borrower_name}`}
+          table="loan_repayments"
+          loanId={id}
+          defaultAmount={outstanding || ''}
           max={outstanding}
           daily={inst}
           freq={l.frequency}
