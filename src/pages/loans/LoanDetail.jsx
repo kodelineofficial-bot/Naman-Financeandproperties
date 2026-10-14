@@ -180,11 +180,11 @@ export default function LoanDetail() {
       q(supabase.from('loan_summary').select('*').eq('id', id).single()),
       q(supabase.from('loan_disbursements').select('*').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
       q(supabase.from('loan_repayments').select('*').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
-      q(supabase.from('loans').select('renewed_from, from:renewed_from(loan_no)').eq('id', id).single()),
+      q(supabase.from('loans').select('renewed_from, penalty_per_day, from:renewed_from(loan_no)').eq('id', id).single()),
       q(supabase.from('loans').select('id,loan_no,loan_date').eq('renewed_from', id)),
       q(supabase.from('loan_penalty_entries').select('*').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
     ]);
-    return { loan, disb, reps, renewedFrom: link.renewed_from ? { id: link.renewed_from, loan_no: link.from?.loan_no } : null, renewedInto, penalties };
+    return { loan, disb, reps, renewedFrom: link.renewed_from ? { id: link.renewed_from, loan_no: link.from?.loan_no } : null, renewedInto, penalties, ownPenaltyRate: link.penalty_per_day };
   }, [id]);
 
   if (loading && !data) return <Loading />;
@@ -198,7 +198,10 @@ export default function LoanDetail() {
   const pendingDisb = toNum(l.pending_disbursement);
   const outstanding = toNum(l.outstanding);
   const penaltyDue = toNum(l.penalty_due);
-  const showPenalty = settings?.penalty_enabled || penalties.length > 0 || toNum(l.penalty_charged) > 0;
+  // A penalty amount typed on the loan itself applies even when the Settings switch is off.
+  const ownPenalty = data.ownPenaltyRate != null;
+  const penaltyOn = settings?.penalty_enabled || (ownPenalty && toNum(data.ownPenaltyRate) > 0);
+  const showPenalty = penaltyOn || penalties.length > 0 || toNum(l.penalty_charged) > 0;
 
   async function togglePenaltyOff() {
     const off = !l.penalty_off;
@@ -359,11 +362,11 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
           <div className="card-sub muted small">
             {l.penalty_off ? (
               <>Penalty is <strong>off</strong> for this loan.</>
-            ) : !settings?.penalty_enabled ? (
+            ) : !penaltyOn ? (
               <>Penalty is off in <Link to="/settings">Settings</Link>.</>
             ) : (
               <>
-                {money(l.penalty_rate)} per day behind · {l.penalty_days} day(s) = <strong>{money(l.penalty_charged)}</strong>
+                {money(l.penalty_rate)} per day behind{ownPenalty ? ' (set on this loan)' : ''} · {l.penalty_days} day(s) = <strong>{money(l.penalty_charged)}</strong>
                 {' '}· Received <strong>{money(l.penalty_paid)}</strong>
                 {toNum(l.penalty_waived) > 0 && <> · Waived <strong>{money(l.penalty_waived)}</strong></>}
                 {' '}· Due <strong className={penaltyDue > 0 ? 'amt-out' : ''}>{money(penaltyDue)}</strong>

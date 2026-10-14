@@ -59,6 +59,7 @@ export default function LoanForm() {
     duration_days: '',
     advance_days: '10',
     advance_amount: '',
+    penalty_per_day: '',
     loan_date: today,
     collection_start_date: today,
     status: 'active',
@@ -114,6 +115,7 @@ export default function LoanForm() {
       interest_pct: String(settings.default_interest_pct ?? 4),
       markup_pct: String(settings.default_markup_pct ?? 20),
       advance_days: String(settings.default_advance_days ?? 10),
+      penalty_per_day: settings.penalty_enabled ? String(settings.penalty_per_day ?? '') : '',
     }));
     setDefaultsApplied(true);
   }, [settings, isEdit, defaultsApplied]);
@@ -134,6 +136,7 @@ export default function LoanForm() {
           duration_days: String(l.duration_days),
           advance_days: String(l.advance_days),
           advance_amount: String(l.advance_amount),
+          penalty_per_day: l.penalty_per_day == null ? '' : String(l.penalty_per_day),
           loan_date: l.loan_date,
           collection_start_date: l.collection_start_date,
           status: l.status,
@@ -190,6 +193,8 @@ export default function LoanForm() {
       duration_days: d.duration_days,
       advance_days: Math.max(0, Math.round(toNum(form.advance_days))),
       advance_amount: d.advance_amount,
+      // Blank = follow the penalty rule in Settings.
+      penalty_per_day: form.penalty_per_day === '' ? null : Math.max(0, round2(form.penalty_per_day)),
       loan_date: form.loan_date,
       collection_start_date: form.collection_start_date,
       notes: form.notes.trim() || null,
@@ -354,6 +359,12 @@ export default function LoanForm() {
               </Field>
               <Field label="Advance amount (₹)">
                 <AutoInput name="advance_amount" {...autoProps} />
+              </Field>
+              <Field
+                label="Penalty per late day (₹) · जुर्माना"
+                hint={settings?.penalty_enabled ? `Blank = Settings (${money(settings.penalty_per_day)}/day) · 0 = no penalty` : 'Blank or 0 = no penalty'}
+              >
+                <input type="number" min="0" step="any" value={form.penalty_per_day} onChange={set('penalty_per_day')} placeholder={settings?.penalty_enabled ? String(settings.penalty_per_day ?? 0) : '0'} />
               </Field>
 
               <Field label="Loan date">
