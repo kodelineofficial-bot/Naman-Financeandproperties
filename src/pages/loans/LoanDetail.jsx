@@ -232,7 +232,7 @@ export default function LoanDetail() {
   // A penalty amount typed on the loan itself applies even when the Settings switch is off.
   const ownPenalty = data.ownPenaltyRate != null;
   const penaltyOn = settings?.penalty_enabled || (ownPenalty && toNum(data.ownPenaltyRate) > 0);
-  const showPenalty = penaltyOn || penalties.length > 0 || toNum(l.penalty_charged) > 0;
+  const penaltyStartDay = toNum(settings?.penalty_grace_days) + 2;
 
   async function togglePenaltyOff() {
     const off = !l.penalty_off;
@@ -409,59 +409,56 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
         </Card>
       </div>
 
-      {showPenalty && (
-        <Card
-          title="Penalty · जुर्माना"
-          actions={
-            <>
-              <button className="btn btn-primary btn-sm" disabled={penaltyDue <= 0} onClick={() => setModal('pen-paid')}>₹ Take penalty</button>
-              <button className="btn btn-sm" disabled={penaltyDue <= 0} onClick={() => setModal('pen-waived')}>Waive · माफ़</button>
-              <button className="btn btn-sm" disabled={busy} onClick={togglePenaltyOff}>
-                {l.penalty_off ? 'Turn penalty on' : 'No penalty for this loan'}
-              </button>
-            </>
-          }
-          flush
-        >
-          <div className="card-sub muted small">
-            {l.penalty_off ? (
-              <>Penalty is <strong>off</strong> for this loan.</>
-            ) : !penaltyOn ? (
-              <>Penalty is off in <Link to="/settings">Settings</Link>.</>
-            ) : (
-              <>
-                {money(l.penalty_rate)} per day behind{ownPenalty ? ' (set on this loan)' : ''} · {l.penalty_days} day(s) = <strong>{money(l.penalty_charged)}</strong>
-                {' '}· Received <strong>{money(l.penalty_paid)}</strong>
-                {toNum(l.penalty_waived) > 0 && <> · Waived <strong>{money(l.penalty_waived)}</strong></>}
-                {' '}· Due <strong className={penaltyDue > 0 ? 'amt-out' : ''}>{money(penaltyDue)}</strong>
-              </>
-            )}
-          </div>
-          {penalties.length > 0 && (
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr><th>Date</th><th>Type</th><th className="num">Amount</th><th>Mode</th><th>Note</th><th /></tr>
-                </thead>
-                <tbody>
-                  {penalties.map((r) => (
-                    <tr key={r.id}>
-                      <td className="nowrap">{fmtDate(r.paid_on)}</td>
-                      <td>{r.kind === 'paid' ? 'Received' : 'Waived (माफ़)'}</td>
-                      <td className="num"><strong>{money(r.amount)}</strong></td>
-                      <td>{r.kind === 'paid' ? modeLabel(r.mode) : '—'}</td>
-                      <td className="muted">{r.note || ''}</td>
-                      <td className="num">
-                        <button className="icon-btn danger" title="Delete" onClick={() => del('loan_penalty_entries', r)}>🗑</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+      <Card
+        title="Penalty · जुर्माना"
+        actions={
+          <>
+            <button className="btn btn-primary btn-sm" disabled={penaltyDue <= 0} onClick={() => setModal('pen-paid')}>₹ Take penalty</button>
+            <button className="btn btn-sm" disabled={penaltyDue <= 0} onClick={() => setModal('pen-waived')}>Waive · माफ़</button>
+            <button className="btn btn-sm" disabled={busy} onClick={togglePenaltyOff}>
+              {l.penalty_off ? 'Turn penalty on' : 'No penalty for this loan'}
+            </button>
+          </>
+        }
+        flush
+      >
+        <div className="card-sub muted small">
+          {l.penalty_off ? (
+            <>Penalty is <strong>off</strong> for this loan. </>
+          ) : !penaltyOn ? (
+            <>Penalty is off in <Link to="/settings">Settings</Link>. </>
+          ) : (
+            <>{money(l.penalty_rate)} per day behind{ownPenalty ? ' (set on this loan)' : ''}, from day {penaltyStartDay} of a missed installment · </>
           )}
-        </Card>
-      )}
+          Penalty days <strong>{toNum(l.penalty_days)}</strong> = <strong>{money(l.penalty_charged)}</strong>
+          {' '}· Received <strong>{money(l.penalty_paid)}</strong>
+          {toNum(l.penalty_waived) > 0 && <> · Waived <strong>{money(l.penalty_waived)}</strong></>}
+          {' '}· Due <strong className={penaltyDue > 0 ? 'amt-out' : ''}>{money(penaltyDue)}</strong>
+        </div>
+        {penalties.length > 0 && (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr><th>Date</th><th>Type</th><th className="num">Amount</th><th>Mode</th><th>Note</th><th /></tr>
+              </thead>
+              <tbody>
+                {penalties.map((r) => (
+                  <tr key={r.id}>
+                    <td className="nowrap">{fmtDate(r.paid_on)}</td>
+                    <td>{r.kind === 'paid' ? 'Received' : 'Waived (माफ़)'}</td>
+                    <td className="num"><strong>{money(r.amount)}</strong></td>
+                    <td>{r.kind === 'paid' ? modeLabel(r.mode) : '—'}</td>
+                    <td className="muted">{r.note || ''}</td>
+                    <td className="num">
+                      <button className="icon-btn danger" title="Delete" onClick={() => del('loan_penalty_entries', r)}>🗑</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       <div className="grid-2">
         <Card title="Loan terms · शर्तें">
