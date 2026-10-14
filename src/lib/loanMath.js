@@ -11,6 +11,7 @@ import { addDays, monthStart, round2, toNum } from './format.js';
  *   daily_installment = principal × dailyPer10k / 10,000
  *   total_repayable   = principal × (1 + markup_pct%)         (or daily × days if days typed)
  *   duration_days     = ceil(total / daily)
+ *   If days are typed (daily left on auto): daily = ceil(total / days) to the rupee
  *   advance_amount    = advance_days × daily                  (installments kept upfront)
  *   net to give       = principal − interest − advance
  *
@@ -31,19 +32,25 @@ export function deriveLoan(f, ov, dailyPer10k = 150) {
     ? toNum(f.interest_amount)
     : round2((P * toNum(f.interest_pct)) / 100);
 
-  const daily = ov.daily_installment
-    ? toNum(f.daily_installment)
-    : round2((P * toNum(dailyPer10k)) / 10000);
-
+  let daily;
   let total;
   let days;
-  if (ov.total_repayable) {
+  if (!ov.daily_installment && ov.duration_days) {
+    // Days typed, daily on auto → daily comes from total ÷ days (whole rupees, so
+    // daily × days always covers the total and the loan ends on the typed day).
+    days = toNum(f.duration_days);
+    total = ov.total_repayable ? toNum(f.total_repayable) : round2(P * (1 + toNum(f.markup_pct) / 100));
+    daily = days > 0 ? Math.ceil(total / days - 1e-9) : 0;
+  } else if (ov.total_repayable) {
+    daily = ov.daily_installment ? toNum(f.daily_installment) : round2((P * toNum(dailyPer10k)) / 10000);
     total = toNum(f.total_repayable);
     days = ov.duration_days ? toNum(f.duration_days) : daily > 0 ? Math.ceil(total / daily) : 0;
   } else if (ov.duration_days) {
+    daily = toNum(f.daily_installment);
     days = toNum(f.duration_days);
     total = round2(daily * days);
   } else {
+    daily = ov.daily_installment ? toNum(f.daily_installment) : round2((P * toNum(dailyPer10k)) / 10000);
     total = round2(P * (1 + toNum(f.markup_pct) / 100));
     days = daily > 0 ? Math.ceil(total / daily) : 0;
   }

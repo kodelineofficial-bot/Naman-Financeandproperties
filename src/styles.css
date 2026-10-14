@@ -479,3 +479,8 @@ button.hbar:hover, .hbar.active { background: #f6efe1; }
 }
 .tag-btn:hover { border-color: var(--gold); background: #fcf6ea; }
 .pen-note { color: var(--red); font-size: 12.5px; }
+
+/* No up/down spinner buttons on number boxes — they changed amounts by mistake. */
+input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }

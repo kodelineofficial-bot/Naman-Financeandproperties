@@ -345,13 +345,13 @@ export default function LoanForm() {
                 <AutoInput name="daily_installment" {...autoProps} />
               </Field>
               <Field label="Extra on principal % (मुनाफ़ा)" hint="10,000 → 12,000 = 20%">
-                <input type="number" min="0" step="any" value={form.markup_pct} onChange={set('markup_pct')} disabled={ov.total_repayable || ov.duration_days} />
+                <input type="number" min="0" step="any" value={form.markup_pct} onChange={set('markup_pct')} disabled={ov.total_repayable || (ov.duration_days && ov.daily_installment)} />
               </Field>
               <Field label="Total to repay (कुल वापसी)">
                 <AutoInput name="total_repayable" {...autoProps} />
               </Field>
 
-              <Field label="Duration (days)" hint="Typing days sets total = daily × days">
+              <Field label="Duration (days)" hint="Type days → daily = total ÷ days (or total = daily × days if you typed the daily)">
                 <AutoInput name="duration_days" step="1" {...autoProps} />
               </Field>
               <Field label="Advance installments kept (days)" hint="e.g. 10 days × daily, kept upfront">
