@@ -32,7 +32,8 @@ export default function Settings() {
         attendance_cuts_salary: settings.attendance_cuts_salary ?? true,
         penalty_enabled: !!settings.penalty_enabled,
         penalty_per_day: String(settings.penalty_per_day ?? 0),
-        penalty_grace_days: String(settings.penalty_grace_days ?? 0),
+        // shown as the day the penalty starts: grace 0 = day 2, grace 1 = day 3, …
+        penalty_start_day: String((settings.penalty_grace_days ?? 0) + 2),
         penalty_from: settings.penalty_from || todayStr(),
       });
     }
@@ -40,6 +41,7 @@ export default function Settings() {
 
   if (!f) return <Loading />;
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const startDay = Math.max(2, Math.round(toNum(f.penalty_start_day)));
 
   const example = deriveLoan(
     {
@@ -72,7 +74,7 @@ export default function Settings() {
               attendance_cuts_salary: !!f.attendance_cuts_salary,
               penalty_enabled: !!f.penalty_enabled,
               penalty_per_day: Math.max(0, round2(f.penalty_per_day)),
-              penalty_grace_days: Math.max(0, Math.round(toNum(f.penalty_grace_days))),
+              penalty_grace_days: Math.max(0, Math.round(toNum(f.penalty_start_day)) - 2),
               penalty_from: f.penalty_from || todayStr(),
             })
             .eq('id', 1),
@@ -161,8 +163,8 @@ export default function Settings() {
               <Field label="Penalty per day (₹)" hint="For every day the borrower is behind">
                 <input type="number" min="0" step="any" value={f.penalty_per_day} onChange={set('penalty_per_day')} />
               </Field>
-              <Field label="Free days (grace)" hint="0 = from the first missed day">
-                <input type="number" min="0" step="1" value={f.penalty_grace_days} onChange={set('penalty_grace_days')} />
+              <Field label="Penalty starts on day" hint="First missed day = day 1 · 3 = from the third day">
+                <input type="number" min="2" step="1" value={f.penalty_start_day} onChange={set('penalty_start_day')} />
               </Field>
               <Field label="Count penalty from" hint="Missed days before this date are not charged">
                 <input type="date" max={todayStr()} value={f.penalty_from} onChange={set('penalty_from')} />
@@ -172,9 +174,9 @@ export default function Settings() {
           <p className="muted small">
             {f.penalty_enabled ? (
               <>
-                Example: daily ₹150, penalty {money(f.penalty_per_day)}/day, {toNum(f.penalty_grace_days)} free day(s). A borrower who is{' '}
-                {toNum(f.penalty_grace_days) > 0 ? `more than ${toNum(f.penalty_grace_days)} installment(s) behind` : 'behind (even partly)'} at the end of a day gets{' '}
-                {money(f.penalty_per_day)} added for that day. 3 such days = {money(3 * toNum(f.penalty_per_day))}. Counted from{' '}
+                Example: penalty {money(f.penalty_per_day)}/day, starting on day {startDay}. A missed installment paid by the end of day{' '}
+                {startDay - 1} = no penalty. From day {startDay} on, {money(f.penalty_per_day)} is added for every day the borrower is still
+                behind — paying on day {startDay} does not remove it. 3 such days = {money(3 * toNum(f.penalty_per_day))}. Counted from{' '}
                 {fmtDateLong(f.penalty_from)}; today is never counted. Penalty is kept separate from the loan balance — take it or
                 waive it (माफ़) from the loan page. A single loan can be kept penalty-free from its page.
               </>

@@ -25,7 +25,7 @@ An admin panel for a daily-collection money-lending business (उधारी / 
 | **Cash In / Out** (पूंजी) | When the owner adds capital or takes money out. This keeps the cash balance correct. |
 | **Employees** (कर्मचारी) | Staff with their fixed salary. Record **salary advances or loans** (and choose which month's salary they come out of) and salary payments. Month-wise statement for each person. |
 | **Salary Report** | Month end: salary − advances − already paid = **what is still owed**. Pay with one click. |
-| **Settings** | Business name, opening cash balance, the default loan terms (all can be changed per loan), and the **late payment penalty** rule (₹ per day, free days, count from date). |
+| **Settings** | Business name, opening cash balance, the default loan terms (all can be changed per loan), and the **late payment penalty** rule (₹ per day, day the penalty starts, count from date). |
 | **WhatsApp Templates** (मैसेज टेम्पलेट) | Create / edit the messages sent from every WhatsApp button. Placeholders like `{name}`, `{overdue}`, `{penalty}`, `{total_due}` are filled per borrower. Four ready-made English templates (reminder, penalty notice, final notice, balance statement). The WhatsApp button opens a picker, then WhatsApp with the text ready — just press Send. |
 
 ## How the loan maths works (default values; every value can be edited per loan)
@@ -46,7 +46,7 @@ Profit = 400 interest + 2,000 extra = 2,400
 
 * **Monthly loans** use the same fields per month: e.g. ₹1,00,000 + 20% = ₹1,20,000 over 12 months = ₹10,000/month, due on the same date every month (31st → last day of short months). Interest cut and advance months work like daily loans.
 * **Overdue** = (installments due till today × installment) − (advance + collected so far). A short payment carries forward to the next installment until it is cleared.
-* **Penalty (जुर्माना)**: when on, every past day the loan ends more than *free days* × daily behind schedule adds ₹ *per day*. Today is never counted. Penalty is separate from the loan balance; take it (shows in cash book as *Penalty*) or waive it (माफ़) on the loan page, or switch it off for one loan.
+* **Penalty (जुर्माना)**: when on, counting the first missed installment day as day 1, every past day from *penalty starts on day* onward that the loan is still behind adds ₹ *per day* (e.g. day 3: miss today and tomorrow, and the penalty starts on the third day even if they pay that day). Today is never counted. Penalty is separate from the loan balance; take it (shows in cash book as *Penalty*) or waive it (माफ़) on the loan page, or switch it off for one loan.
 * A loan **closes on its own** when the full amount is collected, and **re-opens** if a collection is deleted.
 * If you type **Duration (days)** yourself, the total becomes daily × days. If you type **Total**, the days are worked out from it.
 
