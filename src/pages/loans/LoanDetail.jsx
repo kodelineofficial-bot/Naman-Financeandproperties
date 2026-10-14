@@ -402,8 +402,9 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
             <div><span>Loan date</span><strong>{fmtDate(l.loan_date)}</strong></div>
             <div><span>Loan amount (principal)</span><strong>{money(l.principal)}</strong></div>
             <div><span>Interest cut upfront ({toNum(l.interest_pct)}%)</span><strong>{money(l.interest_amount)}</strong></div>
-            <div><span>Advance kept ({l.advance_days} days)</span><strong>{money(l.advance_amount)}</strong></div>
-            <div className="kv-total"><span>Net cash to give</span><strong>{money(l.net_disbursable)}</strong></div>
+            <div><span>Loan given (cash out)</span><strong className="amt-out">{money(toNum(l.principal) - toNum(l.interest_amount))}</strong></div>
+            <div><span>Advance kept ({l.advance_days} days) · income</span><strong className="amt-in">{money(l.advance_amount)}</strong></div>
+            <div className="kv-total"><span>Net cash to hand over</span><strong>{money(l.net_disbursable)}</strong></div>
             <div><span>Daily installment</span><strong>{money(l.daily_installment)}</strong></div>
             <div><span>Total repayable ({l.duration_days} days)</span><strong>{money(l.total_repayable)}</strong></div>
             <div><span>Collection</span><strong>{fmtDateLong(l.collection_start_date)} → {fmtDateLong(l.expected_end_date)}</strong></div>

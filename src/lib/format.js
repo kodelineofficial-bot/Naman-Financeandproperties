@@ -169,4 +169,5 @@ export const LEDGER_KINDS = {
   employee_advance: { label: 'Staff Advance (एडवांस)', short: 'Staff advance', dir: 'out' },
   capital_out:      { label: 'Cash Out (निकासी)', short: 'Cash out', dir: 'out' },
   penalty:          { label: 'Penalty (जुर्माना)', short: 'Penalty', dir: 'in' },
+  loan_advance:     { label: 'Advance Kept (एडवांस)', short: 'Advance kept', dir: 'in' },
 };

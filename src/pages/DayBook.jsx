@@ -10,6 +10,7 @@ const LINK_FOR = {
   disbursement: (r) => `/loans/${r.ref_id}`,
   collection: (r) => `/loans/${r.ref_id}`,
   penalty: (r) => `/loans/${r.ref_id}`,
+  loan_advance: (r) => `/loans/${r.ref_id}`,
   salary: (r) => `/employees/${r.ref_id}`,
   employee_advance: (r) => `/employees/${r.ref_id}`,
 };
@@ -35,7 +36,10 @@ function LedgerTable({ rows, onDelete }) {
                 <td>{modeLabel(r.mode)}</td>
                 <td className="num"><Amount value={r.amount} dir={r.direction} /></td>
                 <td className="num no-print">
-                  <button className="icon-btn danger" title="Delete entry" onClick={() => onDelete(r)}>🗑</button>
+                  {/* Advance kept is part of the loan itself — change it from the loan, not here. */}
+                  {r.kind !== 'loan_advance' && (
+                    <button className="icon-btn danger" title="Delete entry" onClick={() => onDelete(r)}>🗑</button>
+                  )}
                 </td>
               </tr>
             );
@@ -150,7 +154,7 @@ export default function DayBook() {
               ) : (
                 <table className="table">
                   <thead>
-                    <tr><th>Loan</th><th className="num">Principal</th><th className="num">Interest cut</th><th className="num">Advance</th><th className="num">Net</th></tr>
+                    <tr><th>Loan</th><th className="num">Principal</th><th className="num">Interest cut</th><th className="num">Loan given</th><th className="num">Advance in</th><th className="num">Handed over</th></tr>
                   </thead>
                   <tbody>
                     {data.newLoans.map((l) => (
@@ -158,7 +162,8 @@ export default function DayBook() {
                         <td><Link to={`/loans/${l.id}`}>#{l.loan_no} {l.borrower_name}</Link></td>
                         <td className="num">{money(l.principal)}</td>
                         <td className="num amt-in">{money(l.interest_amount)}</td>
-                        <td className="num">{money(l.advance_amount)}</td>
+                        <td className="num amt-out">{money(toNum(l.principal) - toNum(l.interest_amount))}</td>
+                        <td className="num amt-in">{money(l.advance_amount)}</td>
                         <td className="num">{money(l.net_disbursable)}</td>
                       </tr>
                     ))}
@@ -168,6 +173,7 @@ export default function DayBook() {
                       <td>Total</td>
                       <td className="num">{money(sum(data.newLoans, 'principal'))}</td>
                       <td className="num">{money(sum(data.newLoans, 'interest_amount'))}</td>
+                      <td className="num">{money(sum(data.newLoans, (l) => toNum(l.principal) - toNum(l.interest_amount)))}</td>
                       <td className="num">{money(sum(data.newLoans, 'advance_amount'))}</td>
                       <td className="num">{money(sum(data.newLoans, 'net_disbursable'))}</td>
                     </tr>

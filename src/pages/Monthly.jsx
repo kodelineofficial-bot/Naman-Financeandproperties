@@ -42,6 +42,7 @@ export default function Monthly() {
         total_out: toNum(c.total_out),
         collections: toNum(c.collections),
         penalties: toNum(c.penalties),
+        advances_kept: toNum(c.advances_kept),
         disbursements: toNum(c.disbursements),
         expenses: toNum(c.expenses),
         salaries: toNum(c.salaries),
@@ -94,6 +95,7 @@ export default function Monthly() {
               { key: 'opening', label: 'Opening' },
               { key: 'collections', label: 'Collections' },
               { key: 'penalties', label: 'Penalty' },
+              { key: 'advances_kept', label: 'Advance kept' },
               { key: 'capital_in', label: 'Cash in' },
               { key: 'disbursements', label: 'Loans given' },
               { key: 'expenses', label: 'Expenses' },
@@ -158,6 +160,7 @@ export default function Monthly() {
                     <th>Month</th>
                     <th className="num">Opening</th>
                     <th className="num">Collections</th>
+                    <th className="num">Advance kept</th>
                     <th className="num">Cash in</th>
                     <th className="num">Loans given</th>
                     <th className="num">Expenses</th>
@@ -178,6 +181,7 @@ export default function Monthly() {
                       <td><strong>{fmtMonth(m.month)}</strong></td>
                       <td className="num muted">{money(m.opening)}</td>
                       <td className="num amt-in">{money(m.collections)}</td>
+                      <td className="num amt-in">{money(m.advances_kept)}</td>
                       <td className="num">{money(m.capital_in)}</td>
                       <td className="num amt-out">{money(m.disbursements)}</td>
                       <td className="num">{money(m.expenses)}</td>
@@ -194,6 +198,7 @@ export default function Monthly() {
                     <td>Total {year}</td>
                     <td />
                     <td className="num">{money(sum(months, 'collections'))}</td>
+                    <td className="num">{money(sum(months, 'advances_kept'))}</td>
                     <td className="num">{money(sum(months, 'capital_in'))}</td>
                     <td className="num">{money(sum(months, 'disbursements'))}</td>
                     <td className="num">{money(sum(months, 'expenses'))}</td>
@@ -215,6 +220,7 @@ export default function Monthly() {
                   <div><span>Opening cash</span><strong>{money(sel.opening)}</strong></div>
                   <div><span>Collections</span><Amount value={sel.collections} dir="in" /></div>
                   {sel.penalties > 0 && <div><span>Penalty received</span><Amount value={sel.penalties} dir="in" /></div>}
+                  <div><span>Advance kept from new loans</span><Amount value={sel.advances_kept} dir="in" /></div>
                   <div><span>Cash added</span><Amount value={sel.capital_in} dir="in" /></div>
                   <div><span>Loans given</span><Amount value={sel.disbursements} dir="out" /></div>
                   <div><span>Expenses</span><Amount value={sel.expenses} dir="out" /></div>

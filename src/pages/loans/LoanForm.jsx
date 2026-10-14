@@ -401,7 +401,8 @@ export default function LoanForm() {
             <h3>Hisaab · हिसाब</h3>
             <div className="calc-row"><span>Loan amount</span><strong>{money(d.principal)}</strong></div>
             <div className="calc-row minus"><span>− Interest cut ({d.effInterestPct}%)</span><strong>{money(d.interest_amount)}</strong></div>
-            <div className="calc-row minus"><span>− Advance kept ({form.advance_days || 0} days)</span><strong>{money(d.advance_amount)}</strong></div>
+            <div className="calc-row"><span>Loan given (cash out)</span><strong>{money(d.principal - d.interest_amount)}</strong></div>
+            <div className="calc-row minus"><span>− Advance kept ({form.advance_days || 0} days) · income</span><strong>{money(d.advance_amount)}</strong></div>
             {renewId && (
               <div className="calc-row minus"><span>− Old loan #{old?.loan_no} balance</span><strong>{money(adjustAmt)}</strong></div>
             )}

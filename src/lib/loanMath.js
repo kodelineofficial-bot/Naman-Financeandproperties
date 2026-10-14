@@ -14,6 +14,9 @@ import { addDays, monthStart, round2, toNum } from './format.js';
  *   advance_amount    = advance_days × daily                  (installments kept upfront)
  *   net to give       = principal − interest − advance
  *
+ * In the cash book the loan is shown gross: cash out = principal − interest
+ * (9,600) and the advance (1,500) as income; only the net 8,100 is handed over.
+ *
  * Example: 10,000 @4%, 150/day, 20% markup, 10 advance days
  *   → interest 400, total 12,000, 80 days, advance 1,500, net 8,100,
  *     70 daily installments still to collect (10,500), profit 2,400.

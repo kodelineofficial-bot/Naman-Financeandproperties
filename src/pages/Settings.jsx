@@ -119,8 +119,9 @@ export default function Settings() {
               <Field label="Advance days kept"><input type="number" min="0" step="1" value={f.default_advance_days} onChange={set('default_advance_days')} /></Field>
             </div>
             <div className="note-box small">
-              <strong>Example for ₹10,000:</strong> interest {money(example.interest_amount)}, advance {money(example.advance_amount)} →
-              give <strong>{money(example.net)}</strong>. Collect {money(example.daily_installment)}/day, total {money(example.total_repayable)} over{' '}
+              <strong>Example for ₹10,000:</strong> interest {money(example.interest_amount)} → loan given (cash out){' '}
+              <strong>{money(example.principal - example.interest_amount)}</strong>, advance {money(example.advance_amount)} kept as income →
+              hand over <strong>{money(example.net)}</strong>. Collect {money(example.daily_installment)}/day, total {money(example.total_repayable)} over{' '}
               {example.duration_days} days ({example.collectDays} installments after advance). Profit {money(example.profit)}.
             </div>
           </Card>

@@ -125,6 +125,7 @@ export default function Dashboard() {
             <div><span>Borrowers yet to pay today</span><strong>{d.notPaidToday} / {d.dueCount}</strong></div>
             <div><span>Total in today</span><Amount value={d.todayRow.total_in} dir="in" /></div>
             <div><span>Loans given today</span><Amount value={d.todayRow.disbursements} dir="out" /></div>
+            {toNum(d.todayRow.advances_kept) > 0 && <div><span>Advance kept today</span><Amount value={d.todayRow.advances_kept} dir="in" /></div>}
             <div><span>Expenses today</span><Amount value={d.todayRow.expenses} dir="out" /></div>
             <div><span>Total out today</span><Amount value={d.todayRow.total_out} dir="out" /></div>
           </div>
@@ -135,6 +136,7 @@ export default function Dashboard() {
           <div className="kv-list">
             <div><span>Collections</span><Amount value={d.monthRow.collections} dir="in" /></div>
             <div><span>Loans given (cash out)</span><Amount value={d.monthRow.disbursements} dir="out" /></div>
+            <div><span>Advance kept (income)</span><Amount value={d.monthRow.advances_kept} dir="in" /></div>
             <div><span>New loans</span><strong>{d.loansMonth.loans_count || 0} · {money(d.loansMonth.principal_issued)}</strong></div>
             <div><span>Interest cut upfront</span><strong className="amt-in">{money(d.loansMonth.interest_earned)}</strong></div>
             <div><span>Expenses</span><Amount value={d.monthRow.expenses} dir="out" /></div>
