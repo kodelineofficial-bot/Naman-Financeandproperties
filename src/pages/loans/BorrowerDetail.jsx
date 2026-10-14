@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../../components/Toast.jsx';
 import { Card, Empty, ErrorBox, ExportButton, Loading, PageHeader, PrintButton, Progress, Stat, StatusBadge } from '../../components/ui.jsx';
 import { fmtDate, money, sum, whatsappLink } from '../../lib/format.js';
+import { freqOf } from '../../lib/loanMath.js';
 import { useAction, useLoad } from '../../lib/hooks.js';
 import { q, supabase } from '../../lib/supabase.js';
 import BorrowerForm from './BorrowerForm.jsx';
@@ -47,7 +48,7 @@ export default function BorrowerDetail() {
           rows={loans}
           columns={[
             { label: 'Loan #', key: 'loan_no' }, { label: 'Date', key: 'loan_date' }, { label: 'Status', key: 'status' },
-            { label: 'Principal', key: 'principal' }, { label: 'Daily', key: 'daily_installment' }, { label: 'Total to pay', key: 'total_repayable' },
+            { label: 'Principal', key: 'principal' }, { label: 'Installment', key: 'daily_installment' }, { label: 'Type', value: (l) => freqOf(l).label }, { label: 'Total to pay', key: 'total_repayable' },
             { label: 'Collected', key: 'collected_total' }, { label: 'Paid till', key: 'paid_till' },
             { label: 'Balance', key: 'outstanding' }, { label: 'Overdue', key: 'overdue' },
           ]}
@@ -88,7 +89,7 @@ export default function BorrowerDetail() {
                   <tr key={l.id} className="clickable" onClick={() => navigate(`/loans/${l.id}`)}>
                     <td>
                       <strong>#{l.loan_no}</strong> · {money(l.principal)}
-                      <div className="muted small">{fmtDate(l.loan_date)} · {money(l.daily_installment)}/day</div>
+                      <div className="muted small">{fmtDate(l.loan_date)} · {money(l.daily_installment)}{freqOf(l).per}</div>
                     </td>
                     <td style={{ minWidth: 120 }}>
                       <div className="small">{money(l.outstanding)} left</div>

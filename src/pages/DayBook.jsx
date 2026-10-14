@@ -72,8 +72,10 @@ export default function DayBook() {
       q(supabase.rpc('collection_sheet', { p_date: date })),
     ]);
     // Did not pay = nothing paid this day AND not already covered in advance up to this day.
+    // A monthly loan only counts when an installment (or an old shortfall) is due by this day.
     const missed = sheet.filter(
-      (l) => toNum(l.paid_on_date) === 0 && toNum(l.balance_upto) > 0 && (!l.paid_till || l.paid_till < date),
+      (l) => toNum(l.paid_on_date) === 0 && toNum(l.balance_upto) > 0 &&
+        (l.frequency === 'monthly' ? toNum(l.short_upto) > 0 : !l.paid_till || l.paid_till < date),
     );
     return { opening, entries, newLoans, missed };
   }, [date]);
@@ -188,7 +190,7 @@ export default function DayBook() {
               ) : (
                 <table className="table">
                   <thead>
-                    <tr><th>Borrower</th><th className="num">Daily</th><th className="num">Behind (as of this day)</th></tr>
+                    <tr><th>Borrower</th><th className="num">Installment</th><th className="num">Behind (as of this day)</th></tr>
                   </thead>
                   <tbody>
                     {data.missed.map((l) => (
@@ -197,7 +199,7 @@ export default function DayBook() {
                           <Link to={`/loans/${l.id}`}>{l.borrower_name}</Link>
                           <div className="muted small">#{l.loan_no} · {l.borrower_phone || '—'}</div>
                         </td>
-                        <td className="num">{money(l.daily_installment)}</td>
+                        <td className="num">{money(l.daily_installment)}{l.frequency === 'monthly' ? '/month' : '/day'}</td>
                         <td className="num amt-out">{money(l.short_upto)}</td>
                       </tr>
                     ))}

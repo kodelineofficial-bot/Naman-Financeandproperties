@@ -1,4 +1,36 @@
-import { addDays, monthStart, round2, toNum } from './format.js';
+import { addDays, monthStart, parseDate, round2, shiftMonths, toNum } from './format.js';
+
+/** Loan frequency words. One "installment" = one day (daily) or one month (monthly). */
+export const FREQ = {
+  daily:   { label: 'Daily', hi: 'रोज़', unit: 'day', units: 'days', per: '/day', unitHi: 'दिन', adj: 'daily' },
+  monthly: { label: 'Monthly', hi: 'मासिक', unit: 'month', units: 'months', per: '/month', unitHi: 'महीना', adj: 'monthly' },
+};
+export const freqOf = (l) => FREQ[l?.frequency] || FREQ.daily;
+
+/** Date of installment n (1 = first) — same as SQL period_date(). */
+export function periodDate(freq, start, n) {
+  if (!start || n < 1) return null;
+  return freq === 'monthly' ? shiftMonths(start, n - 1) : addDays(start, n - 1);
+}
+
+/** Installments due on or before date d — same as SQL periods_due(). */
+export function periodsDue(freq, start, d) {
+  if (!start || !d || d < start) return 0;
+  if (freq !== 'monthly') return Math.round((parseDate(d) - parseDate(start)) / 86400000) + 1;
+  const k = (Number(d.slice(0, 4)) - Number(start.slice(0, 4))) * 12 + Number(d.slice(5, 7)) - Number(start.slice(5, 7));
+  return shiftMonths(start, k) <= d ? k + 1 : k;
+}
+
+/** "2 days · 2 दिन" / "1.5 months · 1.5 महीने" for an amount of installments. */
+export function periodsText(amount, inst, freq) {
+  const a = toNum(amount);
+  const d = toNum(inst);
+  if (a <= 0 || d <= 0) return '';
+  const n = Math.round((a / d) * 10) / 10;
+  const s = Number.isInteger(n) ? String(n) : n.toFixed(1);
+  if (freq === 'monthly') return n === 1 ? '1 month · 1 महीना' : `${s} months · ${s} महीने`;
+  return n === 1 ? '1 day · 1 दिन' : `${s} days · ${s} दिन`;
+}
 
 /**
  * Derive every loan number from the form inputs.
@@ -25,8 +57,13 @@ import { addDays, monthStart, round2, toNum } from './format.js';
  * The schedule is the full 80 days from collection_start_date. The advance
  * covers the first 10 of them, so cash is due from day 11 to day 80.
  */
-export function deriveLoan(f, ov, dailyPer10k = 150) {
+export function deriveLoan(f, ov, dailyPer10k = 150, freq = 'daily') {
   const P = toNum(f.principal);
+  // Monthly loans: the default is a number of months (12) → installment = total ÷ months.
+  if (freq === 'monthly' && !ov.daily_installment && !ov.duration_days) {
+    ov = { ...ov, duration_days: true };
+    f = { ...f, duration_days: toNum(f.duration_days) > 0 ? f.duration_days : '12' };
+  }
 
   const interest = ov.interest_amount
     ? toNum(f.interest_amount)
@@ -68,15 +105,15 @@ export function deriveLoan(f, ov, dailyPer10k = 150) {
   const totalDays = daily > 0 ? Math.ceil(Math.max(0, total) / daily) : 0;
   const advanceDaysCovered = daily > 0 ? Math.floor(advance / daily + 1e-9) : 0;
   const firstCashDate =
-    f.collection_start_date && collectDays > 0 ? addDays(f.collection_start_date, advanceDaysCovered) : null;
+    f.collection_start_date && collectDays > 0 ? periodDate(freq, f.collection_start_date, advanceDaysCovered + 1) : null;
   const endDate =
-    f.collection_start_date && totalDays > 0 ? addDays(f.collection_start_date, totalDays - 1) : null;
+    f.collection_start_date && totalDays > 0 ? periodDate(freq, f.collection_start_date, totalDays) : null;
 
   const errors = [];
   if (P <= 0) errors.push('Loan amount must be more than 0.');
-  if (daily <= 0) errors.push('Daily installment must be more than 0.');
+  if (daily <= 0) errors.push('Installment must be more than 0.');
   if (total <= 0) errors.push('Total repayable must be more than 0.');
-  if (days <= 0) errors.push('Duration (days) must be more than 0.');
+  if (days <= 0) errors.push(`Duration (${FREQ[freq]?.units || 'days'}) must be more than 0.`);
   if (advance > total) errors.push('Advance kept cannot be more than total repayable.');
   if (net < 0) errors.push('Interest + advance cannot be more than the loan amount.');
   if (f.collection_start_date && f.loan_date && f.collection_start_date < f.loan_date) {
@@ -118,6 +155,10 @@ export function deriveLoan(f, ov, dailyPer10k = 150) {
  *   months   : [{ month: 'YYYY-MM-01', days: [...] }]  (every date of each month)
  *   paidTill : last date that is fully paid (or null)
  *   counts   : { paid, partial, missed, advance, future }
+ *   schedule : [{ n, date, due, covered, state, byAdvance, received }] one row per installment
+ *              (received = cash that came between this due date and the next one)
+ *
+ * Monthly loans use the same rules with one installment per month.
  */
 export function buildLoanCalendar(loan, repayments, today) {
   const daily = toNum(loan.daily_installment);
@@ -133,12 +174,14 @@ export function buildLoanCalendar(loan, repayments, today) {
   }
   pool = round2(pool);
 
+  const freq = loan.frequency || 'daily';
   const start = loan.collection_start_date;
   const schedule = {};
+  const list = [];
   let paidTill = null;
   const counts = { paid: 0, partial: 0, missed: 0, advance: 0, future: 0 };
   for (let i = 0; i < nDays; i++) {
-    const date = addDays(start, i);
+    const date = periodDate(freq, start, i + 1);
     const due = round2(Math.min(daily, total - daily * i));
     const fromAdvance = round2(Math.min(due, advancePool));
     advancePool = round2(advancePool - fromAdvance);
@@ -153,8 +196,15 @@ export function buildLoanCalendar(loan, repayments, today) {
     if (state === 'paid' || state === 'advance') paidTill = date;
     counts[state] += 1;
     schedule[date] = { due, covered, state, byAdvance };
+    list.push({ n: i + 1, date, due, covered, state, byAdvance, received: 0 });
   }
-  const end = nDays > 0 ? addDays(start, nDays - 1) : start;
+  const end = nDays > 0 ? periodDate(freq, start, nDays) : start;
+  // Cash received in each installment's window (its due date up to the next one).
+  for (const [d, amt] of Object.entries(received)) {
+    let k = list.length - 1;
+    while (k > 0 && list[k].date > d) k -= 1;
+    if (list[k]) list[k].received = round2(list[k].received + amt);
+  }
 
   // Show whole months, from the first payment/start up to the end / last payment.
   const dates = Object.keys(received);
@@ -189,5 +239,5 @@ export function buildLoanCalendar(loan, repayments, today) {
     m = d; // first day of the next month
   }
 
-  return { days, months, paidTill, counts, nDays, start, end, extra: Math.max(0, pool) };
+  return { days, months, paidTill, counts, nDays, start, end, extra: Math.max(0, pool), schedule: list, freq };
 }

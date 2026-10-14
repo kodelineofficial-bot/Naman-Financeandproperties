@@ -5,7 +5,7 @@ import { Card, ErrorBox, Field, Loading, ModeSelect, PageHeader } from '../../co
 import { useSettings } from '../../context/SettingsContext.jsx';
 import { getBorrowers } from '../../lib/api.js';
 import { fmtDateLong, money, round2, toNum, todayStr } from '../../lib/format.js';
-import { deriveLoan } from '../../lib/loanMath.js';
+import { FREQ, deriveLoan, freqOf } from '../../lib/loanMath.js';
 import { useAction, useLoad } from '../../lib/hooks.js';
 import { q, supabase } from '../../lib/supabase.js';
 import { BORROWER_FIELDS, BorrowerFields, cleanBorrower } from './BorrowerForm.jsx';
@@ -50,6 +50,7 @@ export default function LoanForm() {
 
   const today = todayStr();
   const [form, setForm] = useState({
+    frequency: 'daily',
     principal: '10000',
     interest_pct: '4',
     interest_amount: '',
@@ -93,7 +94,14 @@ export default function LoanForm() {
     setBorrowerId(old.borrower_id);
     setBorrowerMode('existing');
     setAdjust(String(oldBalance));
-    setForm((f) => ({ ...f, principal: String(old.principal) }));
+    // Same type as the old loan (daily / monthly); it can still be switched below.
+    const fq = old.frequency || 'daily';
+    setForm((f) => ({
+      ...f,
+      principal: String(old.principal),
+      frequency: fq,
+      ...(fq !== f.frequency && { duration_days: '', daily_installment: '', advance_amount: '', advance_days: fq === 'monthly' ? '0' : f.advance_days }),
+    }));
     setRenewReady(true);
   }, [old, renewReady, oldBalance]);
   // A brand-new loan for someone who already has a running loan → offer renewal.
@@ -114,7 +122,8 @@ export default function LoanForm() {
       ...f,
       interest_pct: String(settings.default_interest_pct ?? 4),
       markup_pct: String(settings.default_markup_pct ?? 20),
-      advance_days: String(settings.default_advance_days ?? 10),
+      // The default advance days are for daily loans; a monthly loan keeps its own value.
+      advance_days: f.frequency === 'monthly' ? f.advance_days : String(settings.default_advance_days ?? 10),
       penalty_per_day: settings.penalty_enabled ? String(settings.penalty_per_day ?? '') : '',
     }));
     setDefaultsApplied(true);
@@ -127,6 +136,7 @@ export default function LoanForm() {
       try {
         const l = await q(supabase.from('loans').select('*').eq('id', id).single());
         setForm({
+          frequency: l.frequency || 'daily',
           principal: String(l.principal),
           interest_pct: String(l.interest_pct),
           interest_amount: String(l.interest_amount),
@@ -152,7 +162,23 @@ export default function LoanForm() {
   }, [id, isEdit, toast]);
 
   const dailyPer10k = settings?.default_daily_per_10k ?? 150;
-  const d = useMemo(() => deriveLoan(form, ov, dailyPer10k), [form, ov, dailyPer10k]);
+  const F = FREQ[form.frequency] || FREQ.daily;
+  const monthly = form.frequency === 'monthly';
+  const d = useMemo(() => deriveLoan(form, ov, dailyPer10k, form.frequency), [form, ov, dailyPer10k]);
+
+  // Daily ↔ monthly: start the amounts again from auto with sensible advance defaults.
+  function setFrequency(fq) {
+    if (fq === form.frequency) return;
+    setForm((f) => ({
+      ...f,
+      frequency: fq,
+      duration_days: '',
+      daily_installment: '',
+      advance_amount: '',
+      advance_days: fq === 'monthly' ? '0' : String(settings?.default_advance_days ?? 10),
+    }));
+    setOv((o) => ({ ...o, daily_installment: false, duration_days: false, advance_amount: false }));
+  }
   const cashToGive = round2(d.net - adjustAmt);
   const renewErrors = [];
   if (renewId && old) {
@@ -184,6 +210,7 @@ export default function LoanForm() {
     if (!isEdit && give > cashToGive + 0.001) return toast.error(`Cannot give more than ${money(cashToGive)} now.`);
 
     const loanPayload = {
+      frequency: form.frequency,
       principal: d.principal,
       interest_pct: toNum(form.interest_pct),
       interest_amount: d.interest_amount,
@@ -258,7 +285,7 @@ export default function LoanForm() {
                 <>
                   <div className="kv-list">
                     <div><span>Borrower</span><strong>{old.borrower_name} {old.borrower_phone ? `· ${old.borrower_phone}` : ''}</strong></div>
-                    <div><span>Old loan</span><strong>#{old.loan_no} · {money(old.principal)} · {money(old.daily_installment)}/day</strong></div>
+                    <div><span>Old loan</span><strong>#{old.loan_no} · {money(old.principal)} · {money(old.daily_installment)}{freqOf(old).per}</strong></div>
                     <div><span>Paid till</span><strong>{old.paid_till ? fmtDateLong(old.paid_till) : 'nothing paid yet'}</strong></div>
                     <div className="kv-total"><span>Old balance still to collect (बाकी)</span><strong>{money(oldBalance)}</strong></div>
                   </div>
@@ -330,6 +357,13 @@ export default function LoanForm() {
           )}
 
           <Card title={isEdit ? 'Loan terms' : '2 · Loan terms (शर्तें)'}>
+            <div className="segmented">
+              {Object.entries(FREQ).map(([k, v]) => (
+                <button type="button" key={k} className={form.frequency === k ? 'active' : ''} onClick={() => setFrequency(k)}>
+                  {v.label} loan · {v.hi}
+                </button>
+              ))}
+            </div>
             <div className="form-grid three">
               <Field label="Loan amount (मूल रकम) *">
                 <input type="number" min="1" step="any" required value={form.principal} onChange={set('principal')} />
@@ -341,7 +375,10 @@ export default function LoanForm() {
                 <AutoInput name="interest_amount" {...autoProps} />
               </Field>
 
-              <Field label="Daily installment (रोज़ की किश्त)" hint={`Default ₹${dailyPer10k} per ₹10,000`}>
+              <Field
+                label={monthly ? 'Monthly installment (महीने की किश्त)' : 'Daily installment (रोज़ की किश्त)'}
+                hint={monthly ? 'Auto = total ÷ months' : `Default ₹${dailyPer10k} per ₹10,000`}
+              >
                 <AutoInput name="daily_installment" {...autoProps} />
               </Field>
               <Field label="Extra on principal % (मुनाफ़ा)" hint="10,000 → 12,000 = 20%">
@@ -351,10 +388,10 @@ export default function LoanForm() {
                 <AutoInput name="total_repayable" {...autoProps} />
               </Field>
 
-              <Field label="Duration (days)" hint="Type days → daily = total ÷ days (or total = daily × days if you typed the daily)">
+              <Field label={`Duration (${F.units})`} hint={`Type ${F.units} → installment = total ÷ ${F.units} (or total = installment × ${F.units} if you typed the installment)`}>
                 <AutoInput name="duration_days" step="1" {...autoProps} />
               </Field>
-              <Field label="Advance installments kept (days)" hint="e.g. 10 days × daily, kept upfront">
+              <Field label={`Advance installments kept (${F.units})`} hint={monthly ? 'e.g. 1 month × installment, kept upfront' : 'e.g. 10 days × daily, kept upfront'}>
                 <input type="number" min="0" step="1" value={form.advance_days} onChange={set('advance_days')} />
               </Field>
               <Field label="Advance amount (₹)">
@@ -370,7 +407,7 @@ export default function LoanForm() {
               <Field label="Loan date">
                 <input type="date" required max={todayStr()} value={form.loan_date} onChange={set('loan_date')} />
               </Field>
-              <Field label="Daily collection starts on">
+              <Field label={monthly ? 'First monthly installment on' : 'Daily collection starts on'} hint={monthly ? 'Then the same date every month' : undefined}>
                 <input type="date" required value={form.collection_start_date} onChange={set('collection_start_date')} />
               </Field>
               {isEdit && (
@@ -413,22 +450,22 @@ export default function LoanForm() {
             <div className="calc-row"><span>Loan amount</span><strong>{money(d.principal)}</strong></div>
             <div className="calc-row minus"><span>− Interest cut ({d.effInterestPct}%)</span><strong>{money(d.interest_amount)}</strong></div>
             <div className="calc-row"><span>Loan given (cash out)</span><strong>{money(d.principal - d.interest_amount)}</strong></div>
-            <div className="calc-row minus"><span>− Advance kept ({form.advance_days || 0} days) · income</span><strong>{money(d.advance_amount)}</strong></div>
+            <div className="calc-row minus"><span>− Advance kept ({form.advance_days || 0} {F.units}) · income</span><strong>{money(d.advance_amount)}</strong></div>
             {renewId && (
               <div className="calc-row minus"><span>− Old loan #{old?.loan_no} balance</span><strong>{money(adjustAmt)}</strong></div>
             )}
             <div className="calc-row total"><span>Cash to give (देना)</span><strong>{money(cashToGive)}</strong></div>
 
             <div className="calc-sep" />
-            <div className="calc-row"><span>Daily installment</span><strong>{money(d.daily_installment)}</strong></div>
+            <div className="calc-row"><span>{F.label} installment</span><strong>{money(d.daily_installment)}{F.per}</strong></div>
             <div className="calc-row"><span>Total repayable</span><strong>{money(d.total_repayable)}</strong></div>
-            <div className="calc-row"><span>Duration</span><strong>{d.duration_days} days</strong></div>
+            <div className="calc-row"><span>Duration</span><strong>{d.duration_days} {F.units}</strong></div>
             <div className="calc-row minus"><span>− Already kept as advance</span><strong>{money(d.advance_amount)}</strong></div>
-            <div className="calc-row total"><span>To collect daily (लेना)</span><strong>{money(d.toCollect)}</strong></div>
+            <div className="calc-row total"><span>To collect {F.adj} (लेना)</span><strong>{money(d.toCollect)}</strong></div>
             <div className="calc-row"><span>Installments left</span><strong>{d.collectDays}</strong></div>
-            <div className="calc-row"><span>Day 1 of loan</span><strong>{fmtDateLong(form.collection_start_date)}</strong></div>
+            <div className="calc-row"><span>{monthly ? 'Installment 1 due' : 'Day 1 of loan'}</span><strong>{fmtDateLong(form.collection_start_date)}</strong></div>
             {d.advanceDaysCovered > 0 && (
-              <div className="calc-row"><span>Paid by advance</span><strong>first {d.advanceDaysCovered} days</strong></div>
+              <div className="calc-row"><span>Paid by advance</span><strong>first {d.advanceDaysCovered} {F.units}</strong></div>
             )}
             <div className="calc-row"><span>First cash collection</span><strong>{d.firstCashDate ? fmtDateLong(d.firstCashDate) : '—'}</strong></div>
             <div className="calc-row"><span>Last collection</span><strong>{d.endDate ? fmtDateLong(d.endDate) : '—'}</strong></div>

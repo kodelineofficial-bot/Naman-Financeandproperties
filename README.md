@@ -12,10 +12,11 @@ An admin panel for a daily-collection money-lending business (उधारी / 
 |---|---|
 | **Login** | Email + password (Supabase Auth). Only users in the `admins` table get in. |
 | **Dashboard** | Cash in hand, money out in the market, overdue, money still to give, today's collection %, this month's numbers, top overdue (with a WhatsApp reminder button), recent entries. |
-| **Daily Collection** (रोज़ की किस्त) | One row per running loan for any date. Amount is pre-filled with the daily installment. Save one row or "Save all". Tabs: Not paid / Paid / Overdue. |
+| **Daily Collection** (रोज़ की किस्त) | One row per running **daily** loan for any date. Amount is pre-filled with the day's installment + anything short from earlier days (₹150/day, ₹120 paid → ₹180 next day). Save one row or "Save all". Tabs: Not paid / Paid / Overdue. |
+| **Monthly Loans** (मासिक किस्त) | One row per **monthly** loan for any month: due date, installment + shortfall carried from earlier months, paid this month, still due, balance. Take payments inline, WhatsApp reminder, CSV export. |
 | **Loans** (उधारी खाता) | All loans with progress, balance, overdue and end date. Filter, search, sort, CSV export. |
-| **New Loan** | Pick an existing borrower or add a new one, then the terms. **Every number is flexible**: auto-calculated fields can be overwritten, and "↺ auto" puts them back. A live *Hisaab* panel shows cash to give, amount to collect, number of installments, last date and profit. |
-| **Loan detail** | Terms, a day-by-day *khata* grid (paid / partial / missed), collections, money given in parts (e.g. 4,100 + 4,000), edit terms, settle, default, cancel, delete, print. |
+| **New Loan** | Pick an existing borrower or add a new one, choose **Daily** or **Monthly** loan, then the terms. **Every number is flexible**: auto-calculated fields can be overwritten, and "↺ auto" puts them back. A live *Hisaab* panel shows cash to give, amount to collect, number of installments, last date and profit. |
+| **Loan detail** | Terms, a day-by-day *khata* grid (daily loans) or a month-by-month schedule (monthly loans), collections incl. the advance kept at loan time, money given in parts (e.g. 4,100 + 4,000), edit terms, settle, default, cancel, delete, print. |
 | **Borrowers** (ग्राहक) | Name, work (काम), phone, address, ID, guarantor, plus all their loans and total balance. |
 | **Day Book** (रोज़नामचा) | **Detailed view of one day**: opening cash, every entry in and out, closing cash, loans issued that day, and who did not pay. |
 | **Daily Summary** (दिन वार) | **Broad view by day**: one line per day across a date range, broken down by type, with running balance. Click a day to open its Day Book. |
@@ -43,7 +44,8 @@ Total repayable                12,000   (10,000 + 20%  =  150 × 80 days)
 Profit = 400 interest + 2,000 extra = 2,400
 ```
 
-* **Overdue** = (advance + days since collection started × daily) − collected so far.
+* **Monthly loans** use the same fields per month: e.g. ₹1,00,000 + 20% = ₹1,20,000 over 12 months = ₹10,000/month, due on the same date every month (31st → last day of short months). Interest cut and advance months work like daily loans.
+* **Overdue** = (installments due till today × installment) − (advance + collected so far). A short payment carries forward to the next installment until it is cleared.
 * **Penalty (जुर्माना)**: when on, every past day the loan ends more than *free days* × daily behind schedule adds ₹ *per day*. Today is never counted. Penalty is separate from the loan balance; take it (shows in cash book as *Penalty*) or waive it (माफ़) on the loan page, or switch it off for one loan.
 * A loan **closes on its own** when the full amount is collected, and **re-opens** if a collection is deleted.
 * If you type **Duration (days)** yourself, the total becomes daily × days. If you type **Total**, the days are worked out from it.
@@ -65,7 +67,7 @@ When you edit or delete any entry, every report changes with it. Supabase Realti
 
 ### 1. Supabase
 1. Create a project at https://supabase.com and choose region **Mumbai (ap-south-1)**.
-2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql`, `002_security_hardening.sql`, `003_multiday_and_attendance.sql`, `004_loan_renewal.sql`, `005_no_future_money_dates.sql`, `006_penalty_and_whatsapp_templates.sql`, `007_advance_covers_first_days.sql`, `008_advance_as_income.sql`, `009_loan_penalty_amount.sql`).
+2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql`, `002_security_hardening.sql`, `003_multiday_and_attendance.sql`, `004_loan_renewal.sql`, `005_no_future_money_dates.sql`, `006_penalty_and_whatsapp_templates.sql`, `007_advance_covers_first_days.sql`, `008_advance_as_income.sql`, `009_loan_penalty_amount.sql`, `010_employee_leave_cut.sql`, `011_monthly_loans.sql`).
 3. *(Optional demo data)* Run `supabase/seed.sql`.
 4. **Authentication → Users → Add user**: enter the owner's email and password, and tick *Auto confirm*.
 5. Make that user an admin (SQL Editor):
@@ -103,6 +105,8 @@ supabase/
   migrations/003_multiday_and_attendance.sql   multi-day payments (paid till), collection sheet, staff attendance
   migrations/004_loan_renewal.sql   loan renewal (old balance cut from new loan, no-cash adjustment)
   migrations/005_no_future_money_dates.sql   money entries cannot have a future date (keeps every page in sync)
+  migrations/010_employee_leave_cut.sql   salary cut per absent day set on each employee
+  migrations/011_monthly_loans.sql   monthly loans (loans.frequency, periods_due / period_date, views use installments)
   seed.sql                    optional demo data
 src/
   lib/        supabase client, formatting, loan maths, data hooks

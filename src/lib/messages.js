@@ -4,8 +4,12 @@ import { fmtDateLong, money, toNum, todayStr } from './format.js';
 export const PLACEHOLDERS = [
   { key: 'name', label: 'Borrower name' },
   { key: 'loan_no', label: 'Loan number' },
-  { key: 'daily', label: 'Daily installment' },
-  { key: 'pending_days', label: 'Days not paid' },
+  { key: 'daily', label: 'Installment amount' },
+  { key: 'installment', label: 'Installment with /day or /month' },
+  { key: 'period', label: 'daily / monthly' },
+  { key: 'pending_days', label: 'Installments not paid' },
+  { key: 'pending_unit', label: 'day(s) / month(s)' },
+  { key: 'next_due', label: 'Next installment date' },
   { key: 'overdue', label: 'Overdue amount' },
   { key: 'penalty', label: 'Penalty due' },
   { key: 'penalty_rate', label: 'Penalty per day' },
@@ -26,15 +30,15 @@ export const BUILTIN_TEMPLATES = [
     use_for: 'reminder',
     sort: 1,
     body:
-      'Hello {name},\n\nThis is a gentle reminder from {business}. Your daily installment of {daily} for Loan #{loan_no} is pending.\n\n' +
-      'Pending: {pending_days} day(s) ({overdue})\nPaid till: {paid_till}\n\nPlease pay today. Thank you!',
+      'Hello {name},\n\nThis is a gentle reminder from {business}. Your {period} installment of {daily} for Loan #{loan_no} is pending.\n\n' +
+      'Pending: {pending_days} {pending_unit} ({overdue})\nPaid till: {paid_till}\n\nPlease pay today. Thank you!',
   },
   {
     name: 'Late payment penalty',
     use_for: 'penalty',
     sort: 2,
     body:
-      'Dear {name},\n\nYour daily installment for Loan #{loan_no} has not been paid for {pending_days} day(s).\n\n' +
+      'Dear {name},\n\nYour {period} installment for Loan #{loan_no} has not been paid for {pending_days} {pending_unit}.\n\n' +
       'Overdue amount: {overdue}\nLate penalty ({penalty_rate} per day): {penalty}\nTotal to pay now: {total_due}\n\n' +
       'Please pay today to avoid further penalty.\n\n- {business} {business_phone}',
   },
@@ -51,7 +55,7 @@ export const BUILTIN_TEMPLATES = [
     use_for: null,
     sort: 4,
     body:
-      'Hello {name},\n\nLoan #{loan_no} statement as on {today}:\nDaily installment: {daily}\nPaid till: {paid_till}\n' +
+      'Hello {name},\n\nLoan #{loan_no} statement as on {today}:\nInstallment: {installment}\nPaid till: {paid_till}\n' +
       'Balance to pay: {balance}\nLast date: {end_date}\n\nThank you,\n{business}',
   },
 ];
@@ -61,13 +65,18 @@ export const BUILTIN_TEMPLATES = [
  * `overdue` / `balance` may be passed in to override (e.g. as of another date).
  */
 export function loanVars(l, settings, { overdue, balance } = {}) {
-  const daily = toNum(l.daily_installment ?? l.daily);
+  const daily = toNum(l.daily_installment ?? l.daily ?? l.inst);
+  const monthly = l.frequency === 'monthly';
   const od = toNum(overdue ?? l.overdue);
   const pen = toNum(l.penalty_due);
   return {
     name: l.borrower_name || '',
     loan_no: l.loan_no ?? '',
     daily: money(daily),
+    installment: money(daily) + (monthly ? '/month' : '/day'),
+    period: monthly ? 'monthly' : 'daily',
+    pending_unit: monthly ? 'month(s)' : 'day(s)',
+    next_due: l.next_due_date ? fmtDateLong(l.next_due_date) : '-',
     pending_days: daily > 0 ? Math.ceil(od / daily - 1e-9) : 0,
     overdue: money(od),
     penalty: money(pen),

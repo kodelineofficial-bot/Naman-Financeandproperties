@@ -24,6 +24,7 @@ const SAMPLE = {
   penalty_days: 3,
   paid_till: addDays(todayStr(), -3),
   expected_end_date: addDays(todayStr(), 45),
+  next_due_date: addDays(todayStr(), 1),
 };
 
 function TemplateModal({ tpl, templates, onClose }) {

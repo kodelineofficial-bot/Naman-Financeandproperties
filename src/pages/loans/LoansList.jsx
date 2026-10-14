@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, Empty, ErrorBox, Loading, PageHeader, PrintButton, Progress, SearchInput, Stat, StatusBadge, Tabs } from '../../components/ui.jsx';
 import { downloadCSV, fmtDate, money, sum, toNum, todayStr } from '../../lib/format.js';
 import { useLoad } from '../../lib/hooks.js';
+import { FREQ, freqOf } from '../../lib/loanMath.js';
 import { q, supabase } from '../../lib/supabase.js';
 
 const SORTS = {
@@ -18,6 +19,7 @@ export default function LoansList() {
   const [params, setParams] = useSearchParams();
   const status = params.get('status') || 'open';
   const sort = params.get('sort') || 'recent';
+  const type = params.get('type') || 'all';
   const [search, setSearch] = useState('');
 
   const { data, loading, error } = useLoad(() => q(supabase.from('loan_summary').select('*').order('loan_no', { ascending: false })), []);
@@ -33,6 +35,7 @@ export default function LoansList() {
     const s = search.trim().toLowerCase();
     return all
       .filter((l) => {
+        if (type !== 'all' && (l.frequency || 'daily') !== type) return false;
         if (status === 'open' && !['active', 'defaulted'].includes(l.status)) return false;
         if (status !== 'open' && status !== 'all' && l.status !== status) return false;
         if (s && !`${l.borrower_name} ${l.borrower_phone || ''} ${l.loan_no} ${l.borrower_occupation || ''}`.toLowerCase().includes(s)) return false;
@@ -40,7 +43,7 @@ export default function LoansList() {
       })
       .map((l) => ({ ...l, overdue: toNum(l.overdue), outstanding: toNum(l.outstanding) }))
       .sort(SORTS[sort]?.fn || SORTS.recent.fn);
-  }, [all, status, sort, search]);
+  }, [all, status, sort, search, type]);
 
   const count = (st) => all.filter((l) => (st === 'open' ? ['active', 'defaulted'].includes(l.status) : st === 'all' || l.status === st)).length;
 
@@ -56,7 +59,8 @@ export default function LoansList() {
       { key: 'advance_amount', label: 'Advance kept' },
       { key: 'net_disbursable', label: 'Net to give' },
       { key: 'disbursed', label: 'Given' },
-      { key: 'daily_installment', label: 'Daily' },
+      { label: 'Type', value: (l) => freqOf(l).label },
+      { key: 'daily_installment', label: 'Installment' },
       { key: 'total_repayable', label: 'Total repayable' },
       { key: 'collected_total', label: 'Collected (incl. advance)' },
       { key: 'outstanding', label: 'Balance' },
@@ -100,6 +104,12 @@ export default function LoansList() {
         actions={
           <>
             <SearchInput value={search} onChange={setSearch} placeholder="Name / phone / loan # / work" />
+            <select value={type} onChange={(e) => set('type', e.target.value)} aria-label="Loan type">
+              <option value="all">Daily + monthly</option>
+              {Object.entries(FREQ).map(([k, v]) => (
+                <option key={k} value={k}>{v.label} only</option>
+              ))}
+            </select>
             <select value={sort} onChange={(e) => set('sort', e.target.value)}>
               {Object.entries(SORTS).map(([k, v]) => (
                 <option key={k} value={k}>{v.label}</option>
@@ -122,7 +132,7 @@ export default function LoansList() {
                   <th>Borrower</th>
                   <th>Date</th>
                   <th className="num">Principal</th>
-                  <th className="num">Daily</th>
+                  <th className="num">Installment</th>
                   <th className="num">Total</th>
                   <th style={{ minWidth: 140 }}>Collected</th>
                   <th className="num">Balance</th>
@@ -144,7 +154,7 @@ export default function LoansList() {
                     </td>
                     <td className="nowrap">{fmtDate(l.loan_date)}</td>
                     <td className="num">{money(l.principal)}</td>
-                    <td className="num">{money(l.daily_installment)}</td>
+                    <td className="num nowrap">{money(l.daily_installment)}<span className="muted small">{freqOf(l).per}</span></td>
                     <td className="num">{money(l.total_repayable)}</td>
                     <td>
                       <div className="small">{money(l.collected_total)} · {l.progress_pct}%</div>

@@ -21,7 +21,7 @@ export default function Dashboard() {
         supabase
           .from('loan_summary')
           .select(
-            'id,loan_no,borrower_name,borrower_phone,daily_installment,outstanding,overdue,expected_till_today,collected_total,pending_disbursement,paid_today,status,collection_start_date,last_paid_on,principal,paid_till,expected_end_date,penalty_due,penalty_days,penalty_rate',
+            'id,loan_no,borrower_name,borrower_phone,daily_installment,frequency,outstanding,overdue,expected_till_today,collected_total,pending_disbursement,paid_today,status,collection_start_date,last_paid_on,principal,paid_till,expected_end_date,penalty_due,penalty_days,penalty_rate',
           )
           .in('status', ['active', 'defaulted']),
       ),
@@ -38,14 +38,16 @@ export default function Dashboard() {
       ),
     ]);
 
-    // Due today = running loan that was not already covered (paid in advance) before today.
-    const coveredAhead = (l) => toNum(l.paid_today) === 0 && l.paid_till && l.paid_till >= today;
+    // Due today = this installment + any shortfall carried from earlier, minus what was paid
+    // before today (same as the collection sheets). Works for daily and monthly loans: a
+    // monthly loan only counts when its installment (or an old shortfall) is due.
+    const dueAmt = (l) =>
+      Math.max(0, Math.min(
+        toNum(l.expected_till_today) - (toNum(l.collected_total) - toNum(l.paid_today)),
+        toNum(l.outstanding) + toNum(l.paid_today),
+      ));
     const dueToday = loans.filter(
-      (l) =>
-        l.status === 'active' &&
-        l.collection_start_date <= today &&
-        (toNum(l.outstanding) > 0 || toNum(l.paid_today) > 0) &&
-        !coveredAhead(l),
+      (l) => l.status === 'active' && l.collection_start_date <= today && (dueAmt(l) > 0 || toNum(l.paid_today) > 0),
     );
     return {
       balance,
@@ -53,12 +55,7 @@ export default function Dashboard() {
       monthRow: monthRow || {},
       loansMonth: loansMonth || {},
       loans,
-      // Same as the collection sheet: today's installment + any shortfall carried from earlier days.
-      expectedToday: sum(dueToday, (l) =>
-        Math.max(0, Math.min(
-          toNum(l.expected_till_today) - (toNum(l.collected_total) - toNum(l.paid_today)),
-          toNum(l.outstanding) + toNum(l.paid_today),
-        ))),
+      expectedToday: sum(dueToday, dueAmt),
       collectedToday: sum(loans, 'paid_today'),
       notPaidToday: dueToday.filter((l) => toNum(l.paid_today) === 0).length,
       dueCount: dueToday.length,
@@ -108,7 +105,7 @@ export default function Dashboard() {
       <div className="stats">
         <Stat label="Cash in hand · रोकड़" value={money(d.balance)} tone={d.balance < 0 ? 'red' : 'gold'} hint="Opening + all in − all out" onClick={() => navigate('/daybook')} />
         <Stat label="Market outstanding · बाज़ार में" value={money(d.outstanding)} hint={`${d.loans.length} open loans`} onClick={() => navigate('/loans')} />
-        <Stat label="Overdue · बकाया" value={money(d.overdue)} tone={d.overdue > 0 ? 'red' : 'green'} hint={d.penaltyDue > 0 ? `+ ${money(d.penaltyDue)} penalty due` : 'Behind daily schedule'} onClick={() => navigate('/loans?sort=overdue')} />
+        <Stat label="Overdue · बकाया" value={money(d.overdue)} tone={d.overdue > 0 ? 'red' : 'green'} hint={d.penaltyDue > 0 ? `+ ${money(d.penaltyDue)} penalty due` : 'Behind schedule'} onClick={() => navigate('/loans?sort=overdue')} />
         <Stat label="To give · देना बाकी" value={money(d.pendingDisb)} hint="Loan amount not yet handed over" />
       </div>
 

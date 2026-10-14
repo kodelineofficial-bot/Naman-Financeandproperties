@@ -48,6 +48,14 @@ export function addMonths(str, n) {
   return toDateStr(d);
 }
 
+/** Same day n months later; 31 Jan + 1 → 28/29 Feb (matches Postgres date + interval). */
+export function shiftMonths(str, n) {
+  const [y, m, day] = String(str).slice(0, 10).split('-').map(Number);
+  const first = new Date(y, m - 1 + n, 1);
+  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+  return toDateStr(new Date(first.getFullYear(), first.getMonth(), Math.min(day, last)));
+}
+
 export function daysBetween(a, b) {
   return Math.round((parseDate(b) - parseDate(a)) / 86400000);
 }

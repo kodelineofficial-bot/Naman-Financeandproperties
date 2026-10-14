@@ -30,7 +30,8 @@ export default function Collection() {
       q(supabase.from('loan_penalty').select('loan_id,penalty_due,penalty_days,penalty_rate').gt('penalty_due', 0)),
     ]);
     const byLoan = Object.fromEntries(pen.map((p) => [p.loan_id, p]));
-    return sheet.map((l) => ({ ...l, ...(byLoan[l.id] && { penalty_due: byLoan[l.id].penalty_due, penalty_days: byLoan[l.id].penalty_days, penalty_rate: byLoan[l.id].penalty_rate }) }));
+    // Daily loans only — monthly loans have their own page (Monthly Loans).
+    return sheet.filter((l) => l.frequency !== 'monthly').map((l) => ({ ...l, ...(byLoan[l.id] && { penalty_due: byLoan[l.id].penalty_due, penalty_days: byLoan[l.id].penalty_days, penalty_rate: byLoan[l.id].penalty_rate }) }));
   }, [date]);
 
   const all = useMemo(
@@ -265,9 +266,9 @@ export default function Collection() {
         )}
       </Card>
       <p className="help-box">
-        <strong>How to use · कैसे करें:</strong> The amount is already filled with 1 day's installment. If someone pays for more days,
+        <strong>How to use · कैसे करें:</strong> The amount is already filled with the day's installment plus anything short from earlier days. If someone pays for more days,
         press <strong>+</strong> (one more day) or type the amount — e.g. ₹300 on a ₹150 loan = 2 days. Then press <strong>Save</strong>.
-        People who paid in advance move to the <strong>Advance</strong> tab automatically.
+        People who paid in advance move to the <strong>Advance</strong> tab automatically. Monthly loans are on the <Link to="/monthly-loans">Monthly Loans</Link> page.
       </p>
     </>
   );

@@ -8,6 +8,7 @@ import { isConfigured } from './lib/supabase.js';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Collection from './pages/Collection.jsx';
+import MonthlyLoans from './pages/MonthlyLoans.jsx';
 import LoansList from './pages/loans/LoansList.jsx';
 import LoanForm from './pages/loans/LoanForm.jsx';
 import LoanDetail from './pages/loans/LoanDetail.jsx';
@@ -84,6 +85,7 @@ export default function App() {
       >
         <Route index element={<Dashboard />} />
         <Route path="collection" element={<Collection />} />
+        <Route path="monthly-loans" element={<MonthlyLoans />} />
         <Route path="loans" element={<LoansList />} />
         <Route path="loans/new" element={<LoanForm />} />
         <Route path="loans/:id" element={<LoanDetail />} />
