@@ -325,8 +325,15 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
       <div className="stats">
         <Stat label="Balance · बाकी" value={money(l.status === 'renewed' ? 0 : outstanding)} tone="gold" hint={l.status === 'renewed' ? 'Renewed — moved to new loan' : `${l.installments_left} installments left`} />
         <Stat label="Collected · जमा" value={money(l.collected_total)} tone="green" hint={`incl. ${money(l.advance_amount)} advance`} />
-        <Stat label="Overdue · बकाया" value={money(l.overdue)} tone={toNum(l.overdue) > 0 ? 'red' : undefined} hint={`${missedDays} missed ${missedDays === 1 ? F.unit : F.units}` + (penaltyDue > 0 ? ` · + ${money(penaltyDue)} penalty` : '')} />
+        <Stat label="Overdue · बकाया" value={money(l.overdue)} tone={toNum(l.overdue) > 0 ? 'red' : undefined} hint={`${missedDays} missed ${missedDays === 1 ? F.unit : F.units}`} />
         <Stat label="To give · देना बाकी" value={money(pendingDisb)} tone={pendingDisb > 0 ? 'red' : undefined} hint={`Given ${money(l.disbursed)} of ${money(l.net_disbursable)}`} />
+        <Stat
+          label="Penalty · जुर्माना"
+          value={money(penaltyDue)}
+          tone={penaltyDue > 0 ? 'red' : undefined}
+          hint={`${toNum(l.penalty_days)} penalty day(s) · ${l.penalty_off ? 'off for this loan' : penaltyOn ? `${money(l.penalty_rate)}/day from day ${penaltyStartDay}` : 'off in Settings'}`}
+          onClick={() => document.getElementById('penalty-card')?.scrollIntoView({ behavior: 'smooth' })}
+        />
       </div>
 
       <Card>
@@ -410,6 +417,7 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
       </div>
 
       <Card
+        id="penalty-card"
         title="Penalty · जुर्माना"
         actions={
           <>

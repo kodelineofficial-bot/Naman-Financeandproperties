@@ -25,9 +25,9 @@ export function Stat({ label, value, hint, tone, onClick }) {
   );
 }
 
-export function Card({ title, actions, children, className = '', flush }) {
+export function Card({ title, actions, children, className = '', flush, id }) {
   return (
-    <section className={`card ${className}`}>
+    <section id={id} className={`card ${className}`}>
       {(title || actions) && (
         <div className="card-head">
           {title && <h2>{title}</h2>}
