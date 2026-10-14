@@ -48,14 +48,22 @@ export default function Collection() {
         else if (toNum(l.balance_upto) <= 0) state = 'done';
         else if (daysBefore >= dayNo) state = 'advance';
         else state = 'pending';
-        const dueToday = daysBefore < dayNo && balanceBefore > 0;
+        // Due this day = everything due up to this day − what came before it, so any
+        // shortfall carries forward: ₹150/day, ₹120 paid on day 1 → ₹180 due on day 2,
+        // and if nothing comes on day 2 either → ₹330 on day 3, until it is cleared.
+        const dueAmount = dayNo > 0
+          ? Math.max(0, round2(Math.min(balanceBefore, dayNo * daily - toNum(l.advance_amount) - before)))
+          : 0;
+        const dueToday = dueAmount > 0;
         return {
           ...l,
           daily,
           paidToday,
           state,
           dueToday,
-          dueAmount: dueToday ? Math.min(daily, balanceBefore) : 0,
+          dueAmount,
+          carried: Math.max(0, round2(dueAmount - daily)),
+          shortToday: paidToday > 0 ? Math.max(0, round2(dueAmount - paidToday)) : 0,
           short: toNum(l.short_upto),
           balance: toNum(l.balance_upto),
         };
@@ -83,12 +91,12 @@ export default function Collection() {
   const collected = sum(all, 'paidToday');
 
   const amountFor = (l) =>
-    amounts[l.id] ?? (l.state === 'pending' ? String(Math.min(l.daily, l.balance)) : '');
+    amounts[l.id] ?? (l.state === 'pending' ? String(l.dueAmount || Math.min(l.daily, l.balance)) : '');
 
+  // − / + move the amount by one day's installment (₹180 due → + → ₹330).
   const stepDays = (l, delta) => {
-    const cur = toNum(amountFor(l));
-    const days = Math.max(0, Math.round(cur / l.daily) + delta);
-    setAmounts((a) => ({ ...a, [l.id]: days ? String(round2(Math.min(days * l.daily, l.balance))) : '' }));
+    const next = Math.max(0, Math.min(round2(toNum(amountFor(l)) + delta * l.daily), l.balance));
+    setAmounts((a) => ({ ...a, [l.id]: next ? String(next) : '' }));
   };
 
   async function saveRows(list) {
@@ -203,6 +211,12 @@ export default function Collection() {
                         )}
                         {l.state === 'advance' && <span className="pill pill-blue">✓ Advance</span>}
                         {l.state === 'pending' && <span className="pill pill-red">Not paid</span>}
+                        {l.state === 'pending' && l.carried > 0 && (
+                          <div className="small amt-out">Due {money(l.dueAmount)} = {money(l.daily)} + {money(l.carried)} pending</div>
+                        )}
+                        {l.state === 'paid' && l.shortToday > 0 && (
+                          <div className="small amt-out">{money(l.shortToday)} short — adds to next day</div>
+                        )}
                         {l.state === 'done' && <span className="pill pill-green">Fully paid</span>}
                         {l.paid_till && (
                           <div className="muted small">Paid till {fmtDateLong(l.paid_till)}</div>

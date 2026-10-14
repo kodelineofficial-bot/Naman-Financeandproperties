@@ -21,7 +21,7 @@ export default function Dashboard() {
         supabase
           .from('loan_summary')
           .select(
-            'id,loan_no,borrower_name,borrower_phone,daily_installment,outstanding,overdue,pending_disbursement,paid_today,status,collection_start_date,last_paid_on,principal,paid_till,expected_end_date,penalty_due,penalty_days,penalty_rate',
+            'id,loan_no,borrower_name,borrower_phone,daily_installment,outstanding,overdue,expected_till_today,collected_total,pending_disbursement,paid_today,status,collection_start_date,last_paid_on,principal,paid_till,expected_end_date,penalty_due,penalty_days,penalty_rate',
           )
           .in('status', ['active', 'defaulted']),
       ),
@@ -53,7 +53,12 @@ export default function Dashboard() {
       monthRow: monthRow || {},
       loansMonth: loansMonth || {},
       loans,
-      expectedToday: sum(dueToday, (l) => Math.min(toNum(l.daily_installment), toNum(l.outstanding) + toNum(l.paid_today))),
+      // Same as the collection sheet: today's installment + any shortfall carried from earlier days.
+      expectedToday: sum(dueToday, (l) =>
+        Math.max(0, Math.min(
+          toNum(l.expected_till_today) - (toNum(l.collected_total) - toNum(l.paid_today)),
+          toNum(l.outstanding) + toNum(l.paid_today),
+        ))),
       collectedToday: sum(loans, 'paid_today'),
       notPaidToday: dueToday.filter((l) => toNum(l.paid_today) === 0).length,
       dueCount: dueToday.length,

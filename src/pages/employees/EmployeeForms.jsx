@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useToast } from '../../components/Toast.jsx';
 import { Field, Modal, ModeSelect } from '../../components/ui.jsx';
-import { fmtMonth, money, monthStart, round2, todayStr } from '../../lib/format.js';
+import { fmtMonth, money, monthStart, round2, toNum, todayStr } from '../../lib/format.js';
 import { useAction } from '../../lib/hooks.js';
 import { q, supabase } from '../../lib/supabase.js';
 
@@ -16,6 +16,7 @@ export function EmployeeForm({ employee, onClose, onSaved }) {
     id_proof: employee?.id_proof || '',
     joining_date: employee?.joining_date || todayStr(),
     monthly_salary: employee ? String(employee.monthly_salary) : '',
+    leave_cut_per_day: employee?.leave_cut_per_day == null ? '' : String(employee.leave_cut_per_day),
     is_active: employee ? employee.is_active : true,
     notes: employee?.notes || '',
   });
@@ -31,6 +32,7 @@ export function EmployeeForm({ employee, onClose, onSaved }) {
       id_proof: f.id_proof.trim() || null,
       joining_date: f.joining_date,
       monthly_salary: round2(f.monthly_salary),
+      leave_cut_per_day: f.leave_cut_per_day === '' ? null : Math.max(0, round2(f.leave_cut_per_day)),
       is_active: f.is_active,
       notes: f.notes.trim() || null,
     };
@@ -56,6 +58,12 @@ export function EmployeeForm({ employee, onClose, onSaved }) {
           <Field label="Phone"><input type="tel" value={f.phone} onChange={set('phone')} /></Field>
           <Field label="Designation / Work"><input value={f.designation} onChange={set('designation')} placeholder="Collection agent, Accountant…" /></Field>
           <Field label="Fixed monthly salary (₹) *"><input type="number" min="0" step="any" required value={f.monthly_salary} onChange={set('monthly_salary')} /></Field>
+          <Field
+            label="Cut per extra leave day (₹)"
+            hint={toNum(f.monthly_salary) > 0 ? `Blank = salary ÷ days in month (≈ ${money(toNum(f.monthly_salary) / 30)}/day) · 0 = no cut` : 'Blank = salary ÷ days in month · 0 = no cut'}
+          >
+            <input type="number" min="0" step="any" value={f.leave_cut_per_day} onChange={set('leave_cut_per_day')} placeholder="Auto" />
+          </Field>
           <Field label="Joining date"><input type="date" required value={f.joining_date} onChange={set('joining_date')} /></Field>
           <Field label="ID proof"><input value={f.id_proof} onChange={set('id_proof')} /></Field>
           <Field label="Address" span={2}><input value={f.address} onChange={set('address')} /></Field>

@@ -57,8 +57,12 @@ export default function EmployeeDetail() {
     const salary = toNum(emp.monthly_salary);
     const c = attCount(m);
     const ndays = Number(monthEnd(m).slice(8));
-    // Same rule as the salary report: salary ÷ days in month × (absent + ½ half days)
-    const cut = cutOn ? Math.round((salary / ndays) * (c.absent + 0.5 * c.half)) : 0;
+    // Same rule as the salary report: per day × (absent + ½ half days).
+    // Per day = the employee's own cut if set, else salary ÷ days in month (when the setting is on).
+    const daysCut = c.absent + 0.5 * c.half;
+    const cut = emp.leave_cut_per_day != null
+      ? Math.round(toNum(emp.leave_cut_per_day) * daysCut)
+      : cutOn ? Math.round((salary / ndays) * daysCut) : 0;
     statement.push({ month: m, salary, att: c, cut, adv, paid, balance: round2(salary - cut - adv - paid) });
   }
   const current = statement[0] || { salary: emp.monthly_salary, cut: 0, adv: 0, paid: 0, balance: emp.monthly_salary };
@@ -113,7 +117,7 @@ export default function EmployeeDetail() {
       <ErrorBox error={error} />
 
       <div className="stats">
-        <Stat label="Fixed salary" value={money(emp.monthly_salary)} hint={`Joined ${fmtDate(emp.joining_date)}`} />
+        <Stat label="Fixed salary" value={money(emp.monthly_salary)} hint={`Joined ${fmtDate(emp.joining_date)}${emp.leave_cut_per_day != null ? ` · Cut ${money(emp.leave_cut_per_day)}/absent day` : ''}`} />
         <Stat label={`Advances · ${fmtMonth(thisMonth)}`} value={money(current.adv)} tone="red" />
         <Stat label="Paid this month" value={money(current.paid)} hint={current.cut ? `Absent cut ${money(current.cut)}` : undefined} />
         <Stat label="Salary left to give" value={money(current.balance)} tone={current.balance < 0 ? 'red' : 'gold'} hint={current.balance < 0 ? 'Advance is more than salary' : 'Salary − absent − advance − paid'} />

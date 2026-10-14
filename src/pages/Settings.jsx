@@ -137,7 +137,7 @@ export default function Settings() {
           </label>
           <p className="muted small">
             When on: 1 absent day = salary ÷ days in month (₹15,000 in a 30-day month = ₹500 per day). Half day = half of that.
-            “Leave” (paid leave) and days not marked are not cut.
+            “Leave” (paid leave) and days not marked are not cut. An employee with their own “cut per extra leave day” is always cut that amount instead.
           </p>
         </Card>
         <Card title="Late payment penalty · जुर्माना">
