@@ -13,6 +13,7 @@ import LoansList from './pages/loans/LoansList.jsx';
 import LoanForm from './pages/loans/LoanForm.jsx';
 import LoanDetail from './pages/loans/LoanDetail.jsx';
 import Borrowers from './pages/loans/Borrowers.jsx';
+import Defaulters from './pages/Defaulters.jsx';
 import BorrowerDetail from './pages/loans/BorrowerDetail.jsx';
 import DayBook from './pages/DayBook.jsx';
 import DailySummary from './pages/DailySummary.jsx';
@@ -92,6 +93,7 @@ export default function App() {
         <Route path="loans/:id/edit" element={<LoanForm />} />
         <Route path="borrowers" element={<Borrowers />} />
         <Route path="borrowers/:id" element={<BorrowerDetail />} />
+        <Route path="defaulters" element={<Defaulters />} />
         <Route path="daybook" element={<DayBook />} />
         <Route path="daily" element={<DailySummary />} />
         <Route path="monthly" element={<Monthly />} />

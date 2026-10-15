@@ -16,6 +16,7 @@ const NAV = [
   { to: '/monthly-loans', label: 'Monthly Loans', hi: 'मासिक किस्त', icon: '◷' },
   { to: '/loans', label: 'Loans', hi: 'उधारी खाता', icon: '▤' },
   { to: '/borrowers', label: 'Borrowers', hi: 'ग्राहक', icon: '☺' },
+  { to: '/defaulters', label: 'Defaulters', hi: 'डिफ़ॉल्टर', icon: '⚠' },
   { section: 'Books · हिसाब' },
   { to: '/daybook', label: 'Day Book', hi: 'रोज़नामचा', icon: '☰' },
   { to: '/daily', label: 'Daily Summary', hi: 'दिन वार', icon: '▦' },

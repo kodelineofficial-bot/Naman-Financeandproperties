@@ -11,6 +11,7 @@ import {
 import { FREQ, buildLoanCalendar, freqOf, periodDate, periodsText } from '../../lib/loanMath.js';
 import { useAction, useLoad } from '../../lib/hooks.js';
 import { q, supabase } from '../../lib/supabase.js';
+import { DefaulterPayModal, OldDefaulterModal, addedOn } from '../Defaulters.jsx';
 
 function EntryModal({ title, table, loanId, defaultAmount, max, daily, freq = 'daily', collected, startDate, onClose }) {
   const F = FREQ[freq] || FREQ.daily;
@@ -158,6 +159,8 @@ function TxnTable({ rows, onDelete, empty, daily, freq }) {
                   <span className="muted small" title="Kept at loan time — change it from Edit terms">🔒</span>
                 ) : r.mode === 'renewal' ? (
                   <span className="muted small" title="Part of a renewal — cannot be deleted here">🔒</span>
+                ) : r.mode === 'opening' ? (
+                  <span className="muted small" title="Old loan amount — change it with Edit">🔒</span>
                 ) : (
                   <button className="icon-btn danger" title="Delete" onClick={() => onDelete(r)}>🗑</button>
                 )}
@@ -209,6 +212,8 @@ export default function LoanDetail() {
   const monthly = l.frequency === 'monthly';
   const inst = toNum(l.daily_installment);
   const defaulted = l.status === 'defaulted' && !!l.defaulted_on;
+  // Old defaulter: dues from before the software, one balance, no schedule / penalty (migration 014).
+  const old = !!l.old_defaulter;
   // A defaulted loan is frozen: nothing new falls due from the day it was defaulted.
   const cal = buildLoanCalendar(l, reps, defaulted && addDays(l.defaulted_on, -1) < today ? addDays(l.defaulted_on, -1) : today);
   // The advance kept at loan time is part of what the borrower paid, so it is shown in the
@@ -294,7 +299,10 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
         {l.status === 'active' && (
           <button className="btn btn-primary btn-lg" onClick={() => setModal('rep')}>₹ Take payment · पैसे लिए</button>
         )}
-        {l.status === 'defaulted' && (
+        {l.status === 'defaulted' && old && (
+          <button className="btn btn-primary btn-lg" onClick={() => setModal('old-pay')}>₹ Take payment · पैसे लिए</button>
+        )}
+        {l.status === 'defaulted' && !old && (
           <>
             <button className="btn btn-primary btn-lg" onClick={() => setModal('settle')}>₹ Settle · पूरा पैसा</button>
             <button className="btn btn-lg" disabled={busy} onClick={() => setStatus('active')}>▶ Resume · फिर से चालू</button>
@@ -305,7 +313,11 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
           <Link className="btn" to={`/loans/new?renew=${id}`}>🔁 Renew · नया loan</Link>
         )}
         <Link className="btn" to={`/borrowers/${l.borrower_id}`}>Borrower</Link>
-        <Link className="btn" to={`/loans/${id}/edit`}>Edit terms</Link>
+        {old ? (
+          <button className="btn" onClick={() => setModal('old-edit')}>Edit balance</button>
+        ) : (
+          <Link className="btn" to={`/loans/${id}/edit`}>Edit terms</Link>
+        )}
         <ExportButton
           filename={`loan-${l.loan_no}-${l.borrower_name}.csv`}
           rows={[
@@ -339,7 +351,28 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
         </div>
       )}
 
-      {defaulted && (
+      {old && (
+        <>
+          <p className="note-box">
+            <strong>Old defaulter</strong> — added on {fmtDate(addedOn(l))} with a balance of {money(l.total_repayable)}
+            {l.loan_date && l.loan_date < addedOn(l) ? ` (old loan of ${fmtDate(l.loan_date)})` : ''}. Take whatever they pay; the balance goes down
+            and the loan closes by itself at ₹0. This old loan is not in the cash book — only the payments are.
+          </p>
+          <div className="stats">
+            <Stat label="Balance · बाकी" value={money(outstanding)} tone={outstanding > 0 ? 'red' : 'green'} hint={l.status === 'closed' ? `Cleared on ${fmtDate(l.closed_on)}` : 'Still to take'} />
+            <Stat label="Received · जमा" value={money(l.collected_cash)} tone="green" hint={`${reps.length} payment(s) · last ${fmtDate(l.last_paid_on)}`} />
+            <Stat label="Balance when added" value={money(l.total_repayable)} hint={toNum(l.principal) !== toNum(l.total_repayable) ? `Original loan ${money(l.principal)}` : undefined} />
+          </div>
+          <Card>
+            <div className="progress-line">
+              <span>{money(l.collected_cash)} of {money(l.total_repayable)} received</span>
+              <strong>{l.progress_pct}%</strong>
+            </div>
+            <Progress pct={l.progress_pct} />
+          </Card>
+        </>
+      )}
+      {!old && defaulted && (
         <p className="note-box">
           <strong>Defaulted on {fmtDate(l.defaulted_on)}</strong> — loan is stopped: balance stays {money(outstanding)}, no new installments
           and no penalty. Take the full balance (<strong>Settle</strong>) or <strong>Resume</strong> to continue from where it stopped.
@@ -348,6 +381,7 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
       {toNum(l.paused_days) > 0 && !defaulted && (
         <p className="muted small">Schedule moved {l.paused_days} day(s) forward for the time this loan was defaulted.</p>
       )}
+      {!old && (<>
       <div className="stats">
         <Stat label="Balance · बाकी" value={money(l.status === 'renewed' ? 0 : outstanding)} tone="gold" hint={l.status === 'renewed' ? 'Renewed — moved to new loan' : `${l.installments_left} installments left`} />
         <Stat label="Collected · जमा" value={money(l.collected_total)} tone="green" hint={`incl. ${money(l.advance_amount)} advance`} />
@@ -414,19 +448,20 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
           <KhataCalendar cal={cal} today={today} />
         </Card>
       )}
+      </>)}
 
       <div className="grid-2">
         <Card
           title={`Collections · जमा (${repRows.length})`}
           actions={
-            <button className="btn btn-primary btn-sm" onClick={() => setModal('rep')}>+ Add collection</button>
+            <button className="btn btn-primary btn-sm" onClick={() => setModal(old ? 'old-pay' : 'rep')}>+ Add collection</button>
           }
           flush
         >
           <div className="card-sub muted small">
             Cash collected: <strong>{money(l.collected_cash)}</strong> · Advance: <strong>{money(l.advance_amount)}</strong>
           </div>
-          <TxnTable rows={repRows} daily={inst} freq={l.frequency} onDelete={(r) => del('loan_repayments', r)} empty="No collections yet." />
+          <TxnTable rows={repRows} daily={old ? 0 : inst} freq={l.frequency} onDelete={(r) => del('loan_repayments', r)} empty="No collections yet." />
         </Card>
         <Card
           title={`Money given · दिया (${disb.length})`}
@@ -442,7 +477,7 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
         </Card>
       </div>
 
-      <Card
+      {!old && <Card
         id="penalty-card"
         title="Penalty · जुर्माना"
         actions={
@@ -492,9 +527,24 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
             </table>
           </div>
         )}
-      </Card>
+      </Card>}
 
       <div className="grid-2">
+        {old ? (
+          <Card title="Old defaulter · पुराना हिसाब">
+            <div className="kv-list">
+              <div><span>Original loan</span><strong>{money(l.principal)}</strong></div>
+              <div><span>Old loan date</span><strong>{l.loan_date && l.loan_date < addedOn(l) ? fmtDate(l.loan_date) : '—'}</strong></div>
+              <div><span>Added to software</span><strong>{fmtDate(addedOn(l))}</strong></div>
+              <div><span>Balance when added</span><strong>{money(l.total_repayable)}</strong></div>
+              <div><span>Received since</span><strong className="amt-in">{money(l.collected_cash)}</strong></div>
+              <div className="kv-total"><span>Balance now · बाकी</span><strong>{money(outstanding)}</strong></div>
+              <div><span>Last payment</span><strong>{fmtDate(l.last_paid_on)}</strong></div>
+              {l.closed_on && <div><span>Cleared on</span><strong>{fmtDate(l.closed_on)}</strong></div>}
+            </div>
+            {l.notes && <p className="note-box">{l.notes}</p>}
+          </Card>
+        ) : (
         <Card title="Loan terms · शर्तें">
           <div className="kv-list">
             <div><span>Loan date</span><strong>{fmtDate(l.loan_date)}</strong></div>
@@ -515,12 +565,13 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
           </div>
           {l.notes && <p className="note-box">{l.notes}</p>}
         </Card>
+        )}
 
         <Card title="Actions">
           <div className="btn-row">
             {l.status === 'active' && <button className="btn" disabled={busy} onClick={() => setStatus('closed')}>Settle / close now</button>}
             {l.status === 'active' && <button className="btn btn-danger-outline" disabled={busy} onClick={() => setStatus('defaulted')}>Mark defaulted</button>}
-            {l.status === 'defaulted' && <button className="btn" disabled={busy} onClick={() => setStatus('active')}>▶ Resume · फिर से चालू</button>}
+            {l.status === 'defaulted' && !old && <button className="btn" disabled={busy} onClick={() => setStatus('active')}>▶ Resume · फिर से चालू</button>}
             {l.status !== 'active' && l.status !== 'renewed' && l.status !== 'defaulted' && <button className="btn" disabled={busy} onClick={() => setStatus('active')}>Re-open as active</button>}
             {isRunning && <Link className="btn" to={`/loans/new?renew=${id}`}>🔁 Renew · नया loan</Link>}
             {l.status !== 'cancelled' && l.status !== 'renewed' && <button className="btn btn-danger-outline" disabled={busy} onClick={() => setStatus('cancelled')}>Cancel loan</button>}
@@ -569,6 +620,8 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
           onClose={() => setModal(null)}
         />
       )}
+      {modal === 'old-pay' && <DefaulterPayModal loan={l} onClose={() => setModal(null)} />}
+      {modal === 'old-edit' && <OldDefaulterModal loan={l} onClose={() => setModal(null)} />}
       {(modal === 'pen-paid' || modal === 'pen-waived') && (
         <PenaltyModal
           kind={modal === 'pen-paid' ? 'paid' : 'waived'}

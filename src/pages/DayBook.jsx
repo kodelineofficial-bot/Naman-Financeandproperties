@@ -67,6 +67,7 @@ export default function DayBook() {
           .from('loan_summary')
           .select('id,loan_no,borrower_name,principal,interest_amount,advance_amount,net_disbursable,disbursed')
           .eq('loan_date', date)
+          .eq('old_defaulter', false)
           .neq('status', 'cancelled'),
       ),
       q(supabase.rpc('collection_sheet', { p_date: date })),
