@@ -17,7 +17,7 @@ An admin panel for a daily-collection money-lending business (उधारी / 
 | **Loans** (उधारी खाता) | All loans with progress, balance, overdue and end date. Filter, search, sort, CSV export. |
 | **New Loan** | Pick an existing borrower or add a new one, choose **Daily** or **Monthly** loan, then the terms. **Every number is flexible**: auto-calculated fields can be overwritten, and "↺ auto" puts them back. A live *Hisaab* panel shows cash to give, amount to collect, number of installments, last date and profit. |
 | **Loan detail** | Terms, a day-by-day *khata* grid (daily loans) or a month-by-month schedule (monthly loans), collections incl. the advance kept at loan time, money given in parts (e.g. 4,100 + 4,000), edit terms, settle, default, cancel, delete, print. |
-| **Borrowers** (ग्राहक) | Name, work (काम), phone, address, ID, guarantor, plus all their loans and total balance. |
+| **Borrowers** (ग्राहक) | Name, work (काम), phone, address, ID, guarantor, profile photo (Cloudinary), plus all their loans and total balance. |
 | **Day Book** (रोज़नामचा) | **Detailed view of one day**: opening cash, every entry in and out, closing cash, loans issued that day, and who did not pay. |
 | **Daily Summary** (दिन वार) | **Broad view by day**: one line per day across a date range, broken down by type, with running balance. Click a day to open its Day Book. |
 | **Monthly Report** (मासिक) | Twelve months side by side: collections, loans given, expenses, salary, closing cash, new business, interest and extra earned. Includes a bar chart and a drill-down for one month. |
@@ -68,7 +68,7 @@ When you edit or delete any entry, every report changes with it. Supabase Realti
 
 ### 1. Supabase
 1. Create a project at https://supabase.com and choose region **Mumbai (ap-south-1)**.
-2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql`, `002_security_hardening.sql`, `003_multiday_and_attendance.sql`, `004_loan_renewal.sql`, `005_no_future_money_dates.sql`, `006_penalty_and_whatsapp_templates.sql`, `007_advance_covers_first_days.sql`, `008_advance_as_income.sql`, `009_loan_penalty_amount.sql`, `010_employee_leave_cut.sql`, `011_monthly_loans.sql`, `012_default_freeze_resume.sql`).
+2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql`, `002_security_hardening.sql`, `003_multiday_and_attendance.sql`, `004_loan_renewal.sql`, `005_no_future_money_dates.sql`, `006_penalty_and_whatsapp_templates.sql`, `007_advance_covers_first_days.sql`, `008_advance_as_income.sql`, `009_loan_penalty_amount.sql`, `010_employee_leave_cut.sql`, `011_monthly_loans.sql`, `012_default_freeze_resume.sql`, `013_profile_photos.sql`).
 3. *(Optional demo data)* Run `supabase/seed.sql`.
 4. **Authentication → Users → Add user**: enter the owner's email and password, and tick *Auto confirm*.
 5. Make that user an admin (SQL Editor):

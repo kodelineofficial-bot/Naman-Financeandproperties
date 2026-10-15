@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import ProfilePhoto from '../../components/ProfilePhoto.jsx';
 import { useToast } from '../../components/Toast.jsx';
 import { Card, Empty, ErrorBox, ExportButton, Loading, PageHeader, PrintButton, Progress, Stat, StatusBadge } from '../../components/ui.jsx';
 import { fmtDate, money, sum, whatsappLink } from '../../lib/format.js';
@@ -66,6 +67,7 @@ export default function BorrowerDetail() {
 
       <div className="grid-2">
         <Card title="Details">
+          <ProfilePhoto kind="borrowers" person={b} />
           <div className="kv-list">
             <div><span>Phone</span><strong>{b.phone || '—'}</strong></div>
             <div><span>Alternate phone</span><strong>{b.alt_phone || '—'}</strong></div>

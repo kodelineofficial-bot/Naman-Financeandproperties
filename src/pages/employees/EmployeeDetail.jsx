@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import ProfilePhoto from '../../components/ProfilePhoto.jsx';
 import { useToast } from '../../components/Toast.jsx';
 import { Badge, Card, Empty, ErrorBox, ExportButton, Loading, PageHeader, PrintButton, Stat } from '../../components/ui.jsx';
 import { Legend, MonthCalendar } from '../../components/KhataCalendar.jsx';
@@ -229,6 +230,7 @@ export default function EmployeeDetail() {
       </div>
 
       <Card title="Details">
+        <ProfilePhoto kind="employees" person={emp} />
         <div className="kv-list">
           <div><span>Phone</span><strong>{emp.phone || '—'}</strong></div>
           <div><span>Address</span><strong>{emp.address || '—'}</strong></div>

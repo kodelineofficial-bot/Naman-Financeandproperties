@@ -484,3 +484,11 @@ button.hbar:hover, .hbar.active { background: #f6efe1; }
 input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
 input[type='number']::-webkit-outer-spin-button,
 input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* ---------- Profile photo (Cloudinary) ---------- */
+.profile-photo { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; flex-wrap: wrap; }
+.profile-photo-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.avatar { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: none; padding: 0; border-radius: 50%; overflow: hidden; background: var(--gold-soft); color: var(--maroon-dark); border: 2px solid var(--line-strong); font-weight: 600; cursor: pointer; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.avatar-lg { width: 96px; height: 96px; font-size: 30px; font-family: 'Playfair Display', serif; }
+.avatar-busy { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(255, 253, 248, 0.7); }
