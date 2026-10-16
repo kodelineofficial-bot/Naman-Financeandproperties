@@ -3,8 +3,9 @@ import { Link } from 'react-router-dom';
 import { useToast } from '../components/Toast.jsx';
 import WhatsAppButton from '../components/WhatsAppButton.jsx';
 import { Card, Empty, ErrorBox, ExportButton, Loading, ModeSelect, PageHeader, PrintButton, SearchInput, Stat, Tabs } from '../components/ui.jsx';
+import { getLedger, getOpeningOn } from '../lib/api.js';
 import {
-  addDays, daysBetween, daysText, fmtDateFull, fmtDateLong, money, round2, sum, toNum, todayStr,
+  LEDGER_KINDS, addDays, daysBetween, daysText, fmtDateFull, fmtDateLong, money, round2, sum, toNum, todayStr,
 } from '../lib/format.js';
 import { useAction, useLoad } from '../lib/hooks.js';
 import { q, supabase } from '../lib/supabase.js';
@@ -25,18 +26,49 @@ export default function Collection() {
   const [busy, run] = useAction(toast);
 
   const { data, loading, error } = useLoad(async () => {
-    const [sheet, pen] = await Promise.all([
+    const [sheet, pen, opening, ledger] = await Promise.all([
       q(supabase.rpc('collection_sheet', { p_date: date })),
       q(supabase.from('loan_penalty').select('loan_id,penalty_due,penalty_days,penalty_rate').gt('penalty_due', 0)),
+      getOpeningOn(date),
+      getLedger(date, date),
     ]);
     const byLoan = Object.fromEntries(pen.map((p) => [p.loan_id, p]));
     // Daily loans only — monthly loans have their own page (Monthly Loans).
-    return sheet.filter((l) => l.frequency !== 'monthly').map((l) => ({ ...l, ...(byLoan[l.id] && { penalty_due: byLoan[l.id].penalty_due, penalty_days: byLoan[l.id].penalty_days, penalty_rate: byLoan[l.id].penalty_rate }) }));
+    const loans = sheet.filter((l) => l.frequency !== 'monthly').map((l) => ({ ...l, ...(byLoan[l.id] && { penalty_due: byLoan[l.id].penalty_due, penalty_days: byLoan[l.id].penalty_days, penalty_rate: byLoan[l.id].penalty_rate }) }));
+    return { loans, opening, ledger };
   }, [date]);
+
+  // The whole day's money (same ledger as the Day Book): everything that came in and
+  // went out — loans given, expenses, salary, staff advances — and the cash left in hand.
+  const day = useMemo(() => {
+    const ledger = data?.ledger || [];
+    const byKind = {};
+    ledger.forEach((r) => {
+      const k = (byKind[r.kind] ||= { kind: r.kind, dir: r.direction, amount: 0, count: 0 });
+      k.amount = round2(k.amount + toNum(r.amount));
+      k.count += 1;
+    });
+    const kinds = Object.keys(LEDGER_KINDS).filter((k) => byKind[k]).map((k) => byKind[k]);
+    const inRows = ledger.filter((r) => r.direction === 'in');
+    const outRows = ledger.filter((r) => r.direction === 'out');
+    const totalIn = sum(inRows, 'amount');
+    const totalOut = sum(outRows, 'amount');
+    const opening = toNum(data?.opening);
+    return {
+      opening,
+      totalIn,
+      totalOut,
+      inCount: inRows.length,
+      outCount: outRows.length,
+      inKinds: kinds.filter((k) => k.dir === 'in'),
+      outKinds: kinds.filter((k) => k.dir === 'out'),
+      closing: round2(opening + totalIn - totalOut),
+    };
+  }, [data]);
 
   const all = useMemo(
     () =>
-      (data || []).map((l) => {
+      (data?.loans || []).map((l) => {
         const daily = toNum(l.daily_installment);
         const paidToday = toNum(l.paid_on_date);
         const before = round2(toNum(l.collected_upto) - paidToday);
@@ -149,6 +181,45 @@ export default function Collection() {
         <Stat label="Still to collect · बाकी" value={money(Math.max(expected - collected, 0))} tone={expected - collected > 0 ? 'red' : undefined} hint={`${counts.pending} not paid yet`} />
         <Stat label="Paid in advance · एडवांस" value={counts.advance} hint="No need to collect today" />
       </div>
+
+      <Card
+        title="Whole day's money · आज का पूरा हिसाब"
+        actions={<Link className="btn btn-sm" to={`/daybook?date=${date}`}>Open Day Book ›</Link>}
+      >
+        <div className="stats">
+          <Stat label="Opening cash · शुरू में" value={money(day.opening)} />
+          <Stat label="Total in · कुल आया" value={money(day.totalIn)} tone="green" hint={`${day.inCount} entries`} />
+          <Stat label="Total out · कुल गया" value={money(day.totalOut)} tone={day.totalOut > 0 ? 'red' : undefined} hint={`${day.outCount} entries`} />
+          <Stat label="Cash in hand · हाथ में" value={money(day.closing)} tone="gold" hint="Opening + in − out" />
+        </div>
+        {day.inKinds.length + day.outKinds.length === 0 ? (
+          <Empty>No money came in or went out on this day yet.</Empty>
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr><th>Type</th><th className="num">Entries</th><th className="num">Amount</th></tr>
+              </thead>
+              <tbody>
+                {[...day.inKinds, ...day.outKinds].map((k) => (
+                  <tr key={k.kind}>
+                    <td>{LEDGER_KINDS[k.kind].label}</td>
+                    <td className="num">{k.count}</td>
+                    <td className={`num ${k.dir === 'in' ? 'amt-in' : 'amt-out'}`}>{k.dir === 'in' ? '+' : '−'} {money(k.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td>Net · बचा</td>
+                  <td className="num">{day.inCount + day.outCount}</td>
+                  <td className="num">{money(round2(day.totalIn - day.totalOut))}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </Card>
 
       <Card
         flush

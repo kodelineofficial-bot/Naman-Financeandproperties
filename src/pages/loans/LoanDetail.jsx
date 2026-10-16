@@ -18,7 +18,16 @@ function EntryModal({ title, table, loanId, defaultAmount, max, daily, freq = 'd
   const quick = freq === 'monthly' ? [1, 2, 3, 6, 12] : [1, 2, 3, 4, 7, 10, 15, 30];
   const toast = useToast();
   const [busy, run] = useAction(toast);
-  const [f, setF] = useState({ paid_on: todayStr(), amount: defaultAmount ? String(defaultAmount) : '', mode: 'cash', note: '' });
+  // Days ↔ amount: typing days fills days × installment; typing an amount shows its days
+  // when it is a whole number of installments.
+  const daysFor = (amount) => {
+    const n = daily > 0 ? toNum(amount) / daily : 0;
+    return n > 0 && Math.abs(n - Math.round(n)) < 1e-9 ? String(Math.round(n)) : '';
+  };
+  const amountFor = (days) => (toNum(days) > 0 ? String(round2(Math.min(toNum(days) * daily, max ?? Infinity))) : '');
+  const [f, setF] = useState({
+    paid_on: todayStr(), amount: defaultAmount ? String(defaultAmount) : '', days: daysFor(defaultAmount), mode: 'cash', note: '',
+  });
 
   async function submit(e) {
     e.preventDefault();
@@ -41,8 +50,13 @@ function EntryModal({ title, table, loanId, defaultAmount, max, daily, freq = 'd
             <input type="date" required max={todayStr()} value={f.paid_on} onChange={(e) => setF({ ...f, paid_on: e.target.value })} />
           </Field>
           <Field label="Amount (₹) · रकम" hint={daily ? periodsText(f.amount, daily, freq) : undefined}>
-            <input className="input-big" type="number" inputMode="decimal" min="0" step="any" required autoFocus value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} />
+            <input className="input-big" type="number" inputMode="decimal" min="0" step="any" required autoFocus value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value, days: daysFor(e.target.value) })} />
           </Field>
+          {daily > 0 && (
+            <Field label={freq === 'monthly' ? 'Months · कितने महीने' : 'Days · कितने दिन'} hint={`× ${money(daily)} = amount`}>
+              <input className="input-big" type="number" inputMode="numeric" min="0" step="1" placeholder="0" value={f.days} onChange={(e) => setF({ ...f, days: e.target.value, amount: amountFor(e.target.value) })} />
+            </Field>
+          )}
           {daily > 0 && (
             <div className="span-2 quick-days">
               <span className="field-label">{freq === 'monthly' ? 'How many months is this payment for? · कितने महीने का?' : 'How many days is this payment for? · कितने दिन का?'}</span>
@@ -52,13 +66,13 @@ function EntryModal({ title, table, loanId, defaultAmount, max, daily, freq = 'd
                     type="button"
                     key={n}
                     className={`btn btn-sm ${round2(f.amount) === round2(n * daily) ? 'btn-primary' : ''}`}
-                    onClick={() => setF({ ...f, amount: String(round2(Math.min(n * daily, max ?? Infinity))) })}
+                    onClick={() => setF({ ...f, amount: amountFor(n), days: daysFor(amountFor(n)) })}
                   >
                     {n} {n === 1 ? F.unit : F.units}
                   </button>
                 ))}
                 {max > 0 && (
-                  <button type="button" className="btn btn-sm" onClick={() => setF({ ...f, amount: String(max) })}>
+                  <button type="button" className="btn btn-sm" onClick={() => setF({ ...f, amount: String(max), days: daysFor(max) })}>
                     Full balance {money(max)}
                   </button>
                 )}
@@ -136,6 +150,74 @@ function PenaltyModal({ kind, loanId, due, borrower, onClose }) {
   );
 }
 
+/**
+ * Penalty up to a date, typed by hand (migration 015): for a loan that was behind before the
+ * Settings "count from" date. The amount is added as it is; from the next day the system counts.
+ */
+function PenaltyOpeningModal({ loan, current, onClose }) {
+  const toast = useToast();
+  const [busy, run] = useAction(toast);
+  const [f, setF] = useState({
+    date: current.date || addDays(todayStr(), -1),
+    amount: current.date ? String(toNum(current.amount)) : '',
+  });
+
+  async function save(values) {
+    const ok = await run(
+      () => q(supabase.from('loans').update(values).eq('id', loan.id)),
+      values.penalty_opening_date ? 'Penalty set · पेनल्टी सेट' : 'Removed',
+    );
+    if (ok) onClose();
+  }
+
+  function submit(e) {
+    e.preventDefault();
+    if (!f.date) return toast.error('Pick a date.');
+    if (f.date > todayStr()) return toast.error('Date cannot be in the future · aage ki tareekh nahi');
+    const amount = round2(f.amount);
+    if (amount < 0) return toast.error('Amount cannot be negative.');
+    save({ penalty_opening_date: f.date, penalty_opening_amount: amount });
+  }
+
+  return (
+    <Modal title={`Old penalty · पुरानी पेनल्टी — ${loan.borrower_name}`} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="form-grid">
+          <Field label="Penalty up to date · इस तारीख तक">
+            <input type="date" required max={todayStr()} value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} />
+          </Field>
+          <Field label="Penalty till then (₹) · तब तक की पेनल्टी" hint="0 = no penalty till then">
+            <input className="input-big" type="number" inputMode="decimal" min="0" step="any" autoFocus value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} />
+          </Field>
+          {loan.paid_till && (
+            <div className="span-2">
+              <button type="button" className="btn btn-sm" onClick={() => setF({ date: loan.paid_till > todayStr() ? todayStr() : loan.paid_till, amount: '0' })}>
+                Count from paid till ({fmtDateLong(loan.paid_till)})
+              </button>
+              <div className="muted small">The system counts every day behind after the date it was paid till.</div>
+            </div>
+          )}
+        </div>
+        {f.date && (
+          <p className="good-note">
+            Penalty = <strong>{money(round2(f.amount))}</strong> up to {fmtDateLong(f.date)}, then {money(loan.penalty_rate)} for every day behind
+            from {fmtDateLong(addDays(f.date, 1))}. The Settings &quot;count from&quot; date does not apply to this loan.
+          </p>
+        )}
+        <div className="form-actions">
+          {current.date && (
+            <button type="button" className="btn btn-danger" disabled={busy} onClick={() => save({ penalty_opening_date: null, penalty_opening_amount: 0 })}>
+              Remove
+            </button>
+          )}
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 function TxnTable({ rows, onDelete, empty, daily, freq }) {
   if (!rows.length) return <Empty>{empty}</Empty>;
   return (
@@ -195,11 +277,12 @@ export default function LoanDetail() {
       q(supabase.from('loan_summary').select('*').eq('id', id).single()),
       q(supabase.from('loan_disbursements').select('*').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
       q(supabase.from('loan_repayments').select('*').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
-      q(supabase.from('loans').select('renewed_from, penalty_per_day, from:renewed_from(loan_no)').eq('id', id).single()),
+      q(supabase.from('loans').select('renewed_from, penalty_per_day, penalty_opening_date, penalty_opening_amount, from:renewed_from(loan_no)').eq('id', id).single()),
       q(supabase.from('loans').select('id,loan_no,loan_date').eq('renewed_from', id)),
       q(supabase.from('loan_penalty_entries').select('*').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
     ]);
-    return { loan, disb, reps, renewedFrom: link.renewed_from ? { id: link.renewed_from, loan_no: link.from?.loan_no } : null, renewedInto, penalties, ownPenaltyRate: link.penalty_per_day };
+    return { loan, disb, reps, renewedFrom: link.renewed_from ? { id: link.renewed_from, loan_no: link.from?.loan_no } : null, renewedInto, penalties, ownPenaltyRate: link.penalty_per_day,
+      penaltyOpening: { date: link.penalty_opening_date, amount: link.penalty_opening_amount } };
   }, [id]);
 
   if (loading && !data) return <Loading />;
@@ -307,6 +390,9 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
             <button className="btn btn-primary btn-lg" onClick={() => setModal('settle')}>₹ Settle · पूरा पैसा</button>
             <button className="btn btn-lg" disabled={busy} onClick={() => setStatus('active')}>▶ Resume · फिर से चालू</button>
           </>
+        )}
+        {!old && !l.penalty_off && (
+          <button className="btn" onClick={() => setModal('pen-opening')}>Old penalty · पुरानी पेनल्टी</button>
         )}
         <WhatsAppButton loan={l} />
         {isRunning && (
@@ -499,6 +585,9 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
           ) : (
             <>{money(l.penalty_rate)} per day behind{ownPenalty ? ' (set on this loan)' : ''}, from day {penaltyStartDay} of a missed installment · </>
           )}
+          {data.penaltyOpening.date && !l.penalty_off && (
+            <>Set by hand: <strong>{money(data.penaltyOpening.amount)}</strong> up to {fmtDateLong(data.penaltyOpening.date)}, counted from the next day · </>
+          )}
           Penalty days <strong>{toNum(l.penalty_days)}</strong> = <strong>{money(l.penalty_charged)}</strong>
           {' '}· Received <strong>{money(l.penalty_paid)}</strong>
           {toNum(l.penalty_waived) > 0 && <> · Waived <strong>{money(l.penalty_waived)}</strong></>}
@@ -622,6 +711,9 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
       )}
       {modal === 'old-pay' && <DefaulterPayModal loan={l} onClose={() => setModal(null)} />}
       {modal === 'old-edit' && <OldDefaulterModal loan={l} onClose={() => setModal(null)} />}
+      {modal === 'pen-opening' && (
+        <PenaltyOpeningModal loan={l} current={data.penaltyOpening} onClose={() => setModal(null)} />
+      )}
       {(modal === 'pen-paid' || modal === 'pen-waived') && (
         <PenaltyModal
           kind={modal === 'pen-paid' ? 'paid' : 'waived'}
