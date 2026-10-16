@@ -160,7 +160,7 @@ export const MODES = [
 ];
 
 export const modeLabel = (m) =>
-  m === 'renewal' ? 'Renewal adjust (no cash)' : m === 'opening' ? 'Old loan (not in cash book)' : MODES.find((x) => x.value === m)?.label || m || '—';
+  m === 'renewal' ? 'Adjusted (no cash)' : m === 'opening' ? 'Old loan (not in cash book)' : MODES.find((x) => x.value === m)?.label || m || '—';
 
 export const EXPENSE_CATEGORIES = [
   'Tea / Snacks', 'Food', 'Fuel / Petrol', 'Travel', 'Rent', 'Electricity',

@@ -36,8 +36,8 @@ function LedgerTable({ rows, onDelete }) {
                 <td>{modeLabel(r.mode)}</td>
                 <td className="num"><Amount value={r.amount} dir={r.direction} /></td>
                 <td className="num no-print">
-                  {/* Advance kept is part of the loan itself — change it from the loan, not here. */}
-                  {r.kind !== 'loan_advance' && (
+                  {/* Advance kept and overdue cuts are part of the loan itself — change them from the loan, not here. */}
+                  {r.kind !== 'loan_advance' && r.mode !== 'renewal' && (
                     <button className="icon-btn danger" title="Delete entry" onClick={() => onDelete(r)}>🗑</button>
                   )}
                 </td>
