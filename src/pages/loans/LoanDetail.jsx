@@ -240,7 +240,11 @@ function TxnTable({ rows, onDelete, empty, daily, freq }) {
                 {r.mode === 'advance' ? (
                   <span className="muted small" title="Kept at loan time — change it from Edit terms">🔒</span>
                 ) : r.mode === 'renewal' ? (
-                  <span className="muted small" title="Part of a renewal — cannot be deleted here">🔒</span>
+                  r.adjusted_into ? (
+                    <Link className="muted small" to={`/loans/${r.adjusted_into}`} title="Cut from a new loan — delete that loan to undo">🔒 new loan</Link>
+                  ) : (
+                    <span className="muted small" title="Part of a renewal — cannot be deleted here">🔒</span>
+                  )
                 ) : r.mode === 'opening' ? (
                   <span className="muted small" title="Old loan amount — change it with Edit">🔒</span>
                 ) : (
@@ -289,7 +293,9 @@ export default function LoanDetail() {
   if (!data) return <ErrorBox error={error || new Error('Loan not found')} />;
 
   const { loan: l, disb, reps, renewedFrom, renewedInto, penalties } = data;
-  const renewAdjusted = sum(reps.filter((r) => r.mode === 'renewal'), 'amount');
+  const renewAdjusted = sum(reps.filter((r) => r.mode === 'renewal' && !r.adjusted_into), 'amount');
+  // Old loans' dues cut from this loan's cash; those loans kept running (migration 016).
+  const duesCut = renewedFrom ? [] : disb.filter((x) => x.mode === 'renewal');
   const isRunning = l.status === 'active' || l.status === 'defaulted';
   const F = freqOf(l);
   const monthly = l.frequency === 'monthly';
@@ -356,7 +362,9 @@ export default function LoanDetail() {
   async function deleteLoan() {
     if (!window.confirm(`Delete loan #${l.loan_no} with ALL its ${disb.length + reps.length} entries? This cannot be undone.` + (renewedFrom ? `
 
-Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
+Old loan #${renewedFrom.loan_no} will become running again.` : '') + (duesCut.length ? `
+
+The old dues cut from this loan (${money(sum(duesCut, 'amount'))}) will be added back to those loans.` : ''))) return;
     const ok = await run(async () => {
       await q(supabase.from('loans').delete().eq('id', id));
       if (renewedFrom) {
@@ -434,6 +442,13 @@ Old loan #${renewedFrom.loan_no} will become running again.` : ''))) return;
         <div className="help-box renew-box">
           🔁 Renewed from <Link to={`/loans/${renewedFrom.id}`}><strong>Loan #{renewedFrom.loan_no}</strong></Link>.
           Old balance adjusted from this loan: <strong>{money(sum(disb.filter((d) => d.mode === 'renewal'), 'amount'))}</strong> (no cash).
+        </div>
+      )}
+      {duesCut.length > 0 && (
+        <div className="help-box renew-box">
+          ✂ Old dues cut from this loan (no cash): {duesCut.map((x, i) => (
+            <span key={x.id}>{i > 0 && ' · '}{x.note} <strong>{money(x.amount)}</strong></span>
+          ))}. Total <strong>{money(sum(duesCut, 'amount'))}</strong>.
         </div>
       )}
 

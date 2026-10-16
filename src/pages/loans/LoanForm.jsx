@@ -108,11 +108,20 @@ export default function LoanForm() {
   const running = useLoad(
     () =>
       !isEdit && !renewId && borrowerMode === 'existing' && borrowerId
-        ? q(supabase.from('loan_summary').select('id,loan_no,outstanding,daily_installment').eq('borrower_id', borrowerId).in('status', ['active', 'defaulted']))
+        ? q(supabase.from('loan_summary').select('id,loan_no,principal,outstanding,overdue,daily_installment,frequency').eq('borrower_id', borrowerId).in('status', ['active', 'defaulted']).order('loan_no'))
         : [],
     [borrowerId, borrowerMode, renewId, isEdit],
   );
   const adjustAmt = renewId ? round2(adjust) : 0;
+  // Optional: cut old loans' overdue from this loan's cash; those loans keep running (migration 016).
+  const [cuts, setCuts] = useState({});
+  const cutRows = (running.data || [])
+    .filter((r) => cuts[r.id]?.on)
+    .map((r) => ({ ...r, cut: round2(cuts[r.id].amount), max: round2(toNum(r.outstanding)) }));
+  const cutTotal = round2(cutRows.reduce((t, r) => t + r.cut, 0));
+  function toggleCut(r, on) {
+    setCuts((c) => ({ ...c, [r.id]: { on, amount: c[r.id]?.amount ?? String(round2(toNum(r.overdue))) } }));
+  }
   const discount = renewId ? round2(Math.max(0, oldBalance - adjustAmt)) : 0;
 
   // Apply defaults from Settings once (new loans only).
@@ -179,7 +188,7 @@ export default function LoanForm() {
     }));
     setOv((o) => ({ ...o, daily_installment: false, duration_days: false, advance_amount: false }));
   }
-  const cashToGive = round2(d.net - adjustAmt);
+  const cashToGive = round2(d.net - adjustAmt - cutTotal);
   const renewErrors = [];
   if (renewId && old) {
     if (!['active', 'defaulted'].includes(old.status)) renewErrors.push(`Loan #${old.loan_no} is not running — cannot renew.`);
@@ -187,6 +196,11 @@ export default function LoanForm() {
     if (adjustAmt > oldBalance + 0.001) renewErrors.push(`Cannot cut more than the old balance ${money(oldBalance)}.`);
     if (cashToGive < 0) renewErrors.push(`Old balance ${money(adjustAmt)} is more than this loan's cash ${money(d.net)} — make the new loan bigger.`);
   }
+  for (const r of cutRows) {
+    if (r.cut < 0) renewErrors.push(`Loan #${r.loan_no}: cut cannot be negative.`);
+    if (r.cut > r.max + 0.001) renewErrors.push(`Loan #${r.loan_no}: cannot cut more than its balance ${money(r.max)}.`);
+  }
+  if (!renewId && cutTotal > 0 && cashToGive < 0) renewErrors.push(`Old dues ${money(cutTotal)} are more than this loan's cash ${money(d.net)} — make the new loan bigger or cut less.`);
   const allErrors = [...d.errors, ...renewErrors];
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -249,6 +263,17 @@ export default function LoanForm() {
           throw e;
         }
       }
+      if (!renewId && cutRows.some((r) => r.cut > 0)) {
+        try {
+          for (const r of cutRows) {
+            if (r.cut > 0) await q(supabase.rpc('cut_overdue_into_loan', { p_old: r.id, p_new: loan.id, p_amount: r.cut, p_date: form.loan_date }));
+          }
+        } catch (e) {
+          // Deleting the new loan also removes any cut already made (on delete cascade).
+          await q(supabase.from('loans').delete().eq('id', loan.id));
+          throw e;
+        }
+      }
       if (give > 0) {
         await q(
           supabase.from('loan_disbursements').insert({
@@ -257,7 +282,8 @@ export default function LoanForm() {
         );
       }
       return loan;
-    }, isEdit ? 'Loan updated' : renewId ? `Loan renewed · old loan #${old?.loan_no} closed` : 'Loan created');
+    }, isEdit ? 'Loan updated' : renewId ? `Loan renewed · old loan #${old?.loan_no} closed`
+      : cutTotal > 0 ? `Loan created · ${money(cutTotal)} old dues cut` : 'Loan created');
 
     if (res) navigate(`/loans/${res.id}`);
   }
@@ -335,15 +361,39 @@ export default function LoanForm() {
                       </button>
                     ))}
                   </div>
-                  {(running.data || []).map((r) => (
-                    <div key={r.id} className="help-box renew-box" style={{ marginTop: 12 }}>
-                      ⚠ This borrower already has <strong>Loan #{r.loan_no}</strong> running with <strong>{money(r.outstanding)}</strong> still to collect.
-                      <div className="btn-row" style={{ marginTop: 8 }}>
-                        <Link className="btn btn-primary" to={`/loans/new?renew=${r.id}`}>🔁 Renew loan #{r.loan_no} (cut old balance)</Link>
-                        <span className="muted small">or continue below for a separate second loan</span>
+                  {(running.data || []).map((r) => {
+                    const c = cuts[r.id];
+                    const overdue = round2(toNum(r.overdue));
+                    return (
+                      <div key={r.id} className="help-box renew-box" style={{ marginTop: 12 }}>
+                        ⚠ This borrower already has <strong>Loan #{r.loan_no}</strong> ({money(r.principal)}) running with{' '}
+                        <strong>{money(r.outstanding)}</strong> still to collect
+                        {overdue > 0 ? <> · overdue (बकाया) <strong>{money(overdue)}</strong></> : ' · nothing overdue'}.
+                        {toNum(r.outstanding) > 0 && (
+                          <div style={{ marginTop: 8 }}>
+                            <label className="check">
+                              <input type="checkbox" checked={!!c?.on} onChange={(e) => toggleCut(r, e.target.checked)} />
+                              Cut old dues of loan #{r.loan_no} from this new loan (बकाया काटें)
+                            </label>
+                            {c?.on && (
+                              <div className="form-grid" style={{ marginTop: 8 }}>
+                                <Field
+                                  label="Amount to cut ₹"
+                                  hint={`Overdue ${money(overdue)} · max ${money(r.outstanding)}. Loan #${r.loan_no} keeps running for the rest. Not cash — not in the cash book.`}
+                                >
+                                  <input type="number" min="0" step="any" value={c.amount} onChange={(e) => setCuts((x) => ({ ...x, [r.id]: { ...x[r.id], amount: e.target.value } }))} />
+                                </Field>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div className="btn-row" style={{ marginTop: 8 }}>
+                          <Link className="btn" to={`/loans/new?renew=${r.id}`}>🔁 Renew loan #{r.loan_no} (cut full balance, close it)</Link>
+                          <span className="muted small">or continue below for a separate loan</span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </>
               ) : (
                 <BorrowerFields value={newBorrower} onChange={setNewBorrower} compact />
@@ -454,6 +504,9 @@ export default function LoanForm() {
             {renewId && (
               <div className="calc-row minus"><span>− Old loan #{old?.loan_no} balance</span><strong>{money(adjustAmt)}</strong></div>
             )}
+            {!renewId && cutRows.map((r) => (
+              <div key={r.id} className="calc-row minus"><span>− Loan #{r.loan_no} old dues</span><strong>{money(r.cut)}</strong></div>
+            ))}
             <div className="calc-row total"><span>Cash to give (देना)</span><strong>{money(cashToGive)}</strong></div>
 
             <div className="calc-sep" />
