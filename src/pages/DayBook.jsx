@@ -2,7 +2,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useToast } from '../components/Toast.jsx';
 import { Amount, Card, Empty, ErrorBox, ExportButton, Loading, PageHeader, PrintButton, Stat } from '../components/ui.jsx';
 import { deleteLedgerEntry, getLedger, getOpeningOn } from '../lib/api.js';
-import { LEDGER_KINDS, addDays, fmtDateFull, modeLabel, money, round2, sum, toNum, todayStr } from '../lib/format.js';
+import { LEDGER_KINDS, addDays, counted, fmtDateFull, isUpi, modeLabel, money, round2, sum, toNum, todayStr } from '../lib/format.js';
 import { useAction, useLoad } from '../lib/hooks.js';
 import { q, supabase } from '../lib/supabase.js';
 
@@ -34,7 +34,7 @@ function LedgerTable({ rows, onDelete }) {
                   {r.note && <div className="muted small">{r.note}</div>}
                 </td>
                 <td>{modeLabel(r.mode)}</td>
-                <td className="num"><Amount value={r.amount} dir={r.direction} /></td>
+                <td className={`num ${isUpi(r) ? 'muted' : ''}`}>{isUpi(r) ? money(r.amount) : <Amount value={r.amount} dir={r.direction} />}</td>
                 <td className="num no-print">
                   {/* Advance kept and overdue cuts are part of the loan itself — change them from the loan, not here. */}
                   {r.kind !== 'loan_advance' && r.mode !== 'renewal' && (
@@ -89,13 +89,15 @@ export default function DayBook() {
   const entries = data?.entries || [];
   const ins = entries.filter((e) => e.direction === 'in');
   const outs = entries.filter((e) => e.direction === 'out');
-  const totalIn = sum(ins, 'amount');
-  const totalOut = sum(outs, 'amount');
+  const totalIn = sum(counted(ins), 'amount');
+  const totalOut = sum(counted(outs), 'amount');
+  const upiIn = sum(ins.filter(isUpi), 'amount');
+  const upiOut = sum(outs.filter(isUpi), 'amount');
   const opening = data?.opening ?? 0;
   const closing = round2(opening + totalIn - totalOut);
 
   const byKind = {};
-  for (const e of entries) byKind[e.kind] = round2((byKind[e.kind] || 0) + toNum(e.amount));
+  for (const e of counted(entries)) byKind[e.kind] = round2((byKind[e.kind] || 0) + toNum(e.amount));
 
   return (
     <>
@@ -125,9 +127,12 @@ export default function DayBook() {
         <>
           <div className="stats">
             <Stat label="Opening cash · शुरुआती" value={money(opening)} />
-            <Stat label="Total in · आया" value={money(totalIn)} tone="green" hint={`${ins.length} entries`} />
-            <Stat label="Total out · गया" value={money(totalOut)} tone="red" hint={`${outs.length} entries`} />
+            <Stat label="Total in · आया" value={money(totalIn)} tone="green" hint={`${counted(ins).length} entries`} />
+            <Stat label="Total out · गया" value={money(totalOut)} tone="red" hint={`${counted(outs).length} entries`} />
             <Stat label="Closing cash · बाकी" value={money(closing)} tone="gold" />
+            {upiIn + upiOut > 0 && (
+              <Stat label="UPI · not counted" value={money(upiIn)} hint={upiOut > 0 ? `in · ${money(upiOut)} out` : 'Shown only, not in cash'} />
+            )}
           </div>
 
           <Card title="Summary of the day">

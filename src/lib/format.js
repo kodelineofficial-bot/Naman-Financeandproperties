@@ -160,7 +160,11 @@ export const MODES = [
 ];
 
 export const modeLabel = (m) =>
-  m === 'renewal' ? 'Adjusted (no cash)' : m === 'opening' ? 'Old loan (not in cash book)' : MODES.find((x) => x.value === m)?.label || m || '—';
+  m === 'renewal' ? 'Adjusted (no cash)' : m === 'opening' ? 'Old loan (not in cash book)' : m === 'upi' ? 'UPI (not counted)' : MODES.find((x) => x.value === m)?.label || m || '—';
+
+/** UPI money is shown in the books but left out of money in / out and cash in hand. */
+export const isUpi = (r) => r?.mode === 'upi';
+export const counted = (rows) => (rows || []).filter((r) => !isUpi(r));
 
 export const EXPENSE_CATEGORIES = [
   'Tea / Snacks', 'Food', 'Fuel / Petrol', 'Travel', 'Rent', 'Electricity',

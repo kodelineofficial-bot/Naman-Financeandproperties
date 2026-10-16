@@ -5,7 +5,7 @@ import WhatsAppButton from '../components/WhatsAppButton.jsx';
 import { Card, Empty, ErrorBox, ExportButton, Loading, ModeSelect, PageHeader, PrintButton, SearchInput, Stat, Tabs } from '../components/ui.jsx';
 import { getLedger, getOpeningOn } from '../lib/api.js';
 import {
-  LEDGER_KINDS, addDays, daysBetween, daysText, fmtDateFull, fmtDateLong, money, round2, sum, toNum, todayStr,
+  LEDGER_KINDS, addDays, counted, daysBetween, daysText, fmtDateFull, fmtDateLong, isUpi, money, round2, sum, toNum, todayStr,
 } from '../lib/format.js';
 import { useAction, useLoad } from '../lib/hooks.js';
 import { q, supabase } from '../lib/supabase.js';
@@ -41,7 +41,9 @@ export default function Collection() {
   // The whole day's money (same ledger as the Day Book): everything that came in and
   // went out — loans given, expenses, salary, staff advances — and the cash left in hand.
   const day = useMemo(() => {
-    const ledger = data?.ledger || [];
+    const all = data?.ledger || [];
+    const upi = sum(all.filter(isUpi), 'amount');
+    const ledger = counted(all);
     const byKind = {};
     ledger.forEach((r) => {
       const k = (byKind[r.kind] ||= { kind: r.kind, dir: r.direction, amount: 0, count: 0 });
@@ -56,6 +58,7 @@ export default function Collection() {
     const opening = toNum(data?.opening);
     return {
       opening,
+      upi,
       totalIn,
       totalOut,
       inCount: inRows.length,
@@ -191,6 +194,7 @@ export default function Collection() {
           <Stat label="Total in · कुल आया" value={money(day.totalIn)} tone="green" hint={`${day.inCount} entries`} />
           <Stat label="Total out · कुल गया" value={money(day.totalOut)} tone={day.totalOut > 0 ? 'red' : undefined} hint={`${day.outCount} entries`} />
           <Stat label="Cash in hand · हाथ में" value={money(day.closing)} tone="gold" hint="Opening + in − out" />
+          {day.upi > 0 && <Stat label="UPI · not counted" value={money(day.upi)} hint="Shown only, not in cash" />}
         </div>
         {day.inKinds.length + day.outKinds.length === 0 ? (
           <Empty>No money came in or went out on this day yet.</Empty>

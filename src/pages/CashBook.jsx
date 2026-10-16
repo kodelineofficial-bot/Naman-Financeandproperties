@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useToast } from '../components/Toast.jsx';
 import { Card, Empty, ErrorBox, ExportButton, Field, Loading, Modal, ModeSelect, PageHeader, PrintButton, Stat } from '../components/ui.jsx';
-import { fmtDate, modeLabel, money, round2, sum, todayStr } from '../lib/format.js';
+import { counted, fmtDate, modeLabel, money, round2, sum, todayStr } from '../lib/format.js';
 import { useAction, useLoad } from '../lib/hooks.js';
 import { q, supabase } from '../lib/supabase.js';
 
@@ -62,8 +62,8 @@ export default function CashBook() {
   );
 
   const rows = data || [];
-  const ins = rows.filter((r) => r.direction === 'in');
-  const outs = rows.filter((r) => r.direction === 'out');
+  const ins = counted(rows).filter((r) => r.direction === 'in');
+  const outs = counted(rows).filter((r) => r.direction === 'out');
 
   async function remove(r) {
     if (!window.confirm(`Delete ${money(r.amount)} entry?`)) return;
