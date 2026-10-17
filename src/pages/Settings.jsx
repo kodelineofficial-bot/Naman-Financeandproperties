@@ -180,8 +180,10 @@ export default function Settings() {
             {f.penalty_enabled ? (
               <>
                 Example: penalty {money(f.penalty_per_day)}/day, starting on day {startDay}. A missed installment paid by the end of day{' '}
-                {startDay - 1} = no penalty. From day {startDay} on, {money(f.penalty_per_day)} is added for every day the borrower is still
-                behind — paying on day {startDay} does not remove it. 3 such days = {money(3 * toNum(f.penalty_per_day))}. Counted from{' '}
+                {startDay - 1} = no penalty. On day {startDay} every day from the first missed day is charged ={' '}
+                {money(startDay * toNum(f.penalty_per_day))}, then {money(f.penalty_per_day)} more each day the borrower is still behind
+                (day {startDay + 1} = {money((startDay + 1) * toNum(f.penalty_per_day))}). Paying the overdue does not remove penalty already
+                counted; falling behind again adds a new penalty on top. Counted from{' '}
                 {fmtDateLong(f.penalty_from)}; today is never counted. Penalty is kept separate from the loan balance — take it or
                 waive it (माफ़) from the loan page. A single loan can be kept penalty-free from its page.
               </>

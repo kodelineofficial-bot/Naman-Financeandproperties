@@ -3,10 +3,12 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { Logo } from '../components/ui.jsx';
 
+const LOGIN_EMAIL = 'namantewatia5656@gmail.com';
+
 export default function Login() {
   const { session, isAdmin, loading, signIn } = useAuth();
   const location = useLocation();
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(LOGIN_EMAIL);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -46,6 +48,7 @@ export default function Login() {
           <input
             type="password"
             autoComplete="current-password"
+            autoFocus
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}

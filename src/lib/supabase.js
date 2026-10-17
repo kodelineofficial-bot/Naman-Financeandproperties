@@ -7,7 +7,8 @@ export const isConfigured = Boolean(url && key);
 
 export const supabase = isConfigured
   ? createClient(url, key, {
-      auth: { persistSession: true, autoRefreshToken: true },
+      // sessionStorage: the login lasts while the browser is open; closing it asks for the password again.
+      auth: { persistSession: true, autoRefreshToken: true, storage: window.sessionStorage },
     })
   : null;
 

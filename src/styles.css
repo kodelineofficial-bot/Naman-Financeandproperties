@@ -505,3 +505,7 @@ input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; marg
 .avatar-sm { width: 40px; height: 40px; font-size: 14px; border-width: 1px; cursor: default; }
 .person-cell { display: flex; align-items: center; gap: 10px; }
 .form-section { margin: 14px 0 10px; font-size: 15px; color: var(--maroon-dark); border-top: 1px solid var(--line); padding-top: 12px; }
+
+/* Day Book UPI card */
+.upi-side-title { font-size: 14px; margin: 0 0 6px; }
+.upi-total { margin-top: 14px; }

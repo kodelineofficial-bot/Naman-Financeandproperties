@@ -79,6 +79,34 @@ function TapCard({ title, bigTitle, children }) {
   );
 }
 
+/** One side of the UPI card: amount per type (Collection, Loan given, …) and the side's total. */
+function UpiSide({ title, rows, total, dir }) {
+  const byKind = {};
+  for (const r of rows) byKind[r.kind] = round2((byKind[r.kind] || 0) + displayedLedgerAmount(r));
+  return (
+    <div>
+      <h3 className="upi-side-title">{title} ({rows.length})</h3>
+      {rows.length === 0 ? (
+        <p className="muted small">None.</p>
+      ) : (
+        <table className="table">
+          <tbody>
+            {Object.entries(byKind).map(([k, v]) => (
+              <tr key={k}>
+                <td>{LEDGER_KINDS[k]?.label || k}</td>
+                <td className="num"><Amount value={v} dir={dir} /></td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr><td>Total</td><td className="num"><Amount value={total} dir={dir} /></td></tr>
+          </tfoot>
+        </table>
+      )}
+    </div>
+  );
+}
+
 /** Day Book (रोज़नामचा): full detail of one day — opening, every in/out, closing, who didn't pay. */
 export default function DayBook() {
   const toast = useToast();
@@ -120,8 +148,11 @@ export default function DayBook() {
   const outs = entries.filter((e) => e.direction === 'out');
   const totalIn = sum(counted(ins), 'amount');
   const totalOut = sum(counted(outs), 'amount');
-  const upiIn = sum(ins.filter(isUpi), 'amount');
-  const upiOut = sum(outs.filter(isUpi), 'amount');
+  // UPI rows show the actual transfer, so their totals use the same amount as the table.
+  const upiIns = ins.filter(isUpi);
+  const upiOuts = outs.filter(isUpi);
+  const upiIn = sum(upiIns, displayedLedgerAmount);
+  const upiOut = sum(upiOuts, displayedLedgerAmount);
   const opening = data?.opening ?? 0;
   const closing = round2(opening + totalIn - totalOut);
 
@@ -161,10 +192,21 @@ export default function DayBook() {
             <Stat label="Total in · आया" value={money(totalIn)} tone="green" hint={`${counted(ins).length} entries`} />
             <Stat label="Total out · गया" value={money(totalOut)} tone="red" hint={`${counted(outs).length} entries`} />
             <Stat label="Closing cash · बाकी" value={money(closing)} tone="gold" />
-            {upiIn + upiOut > 0 && (
-              <Stat label="UPI · not counted" value={money(upiIn)} hint={upiOut > 0 ? `in · ${money(upiOut)} out` : 'Shown only, not in cash'} />
-            )}
           </div>
+
+          {upiIns.length + upiOuts.length > 0 && (
+            <Card title="UPI · not counted in cash" actions={<span className="muted small">Shown only — not in total in/out or cash in hand</span>}>
+              <div className="grid-2">
+                <UpiSide title="UPI in · आया" rows={upiIns} total={upiIn} dir="in" />
+                <UpiSide title="UPI out · गया" rows={upiOuts} total={upiOut} dir="out" />
+              </div>
+              <div className="chips upi-total">
+                <div className="chip"><span>Total UPI in</span><Amount value={upiIn} dir="in" /></div>
+                <div className="chip"><span>Total UPI out</span><Amount value={upiOut} dir="out" /></div>
+                <div className="chip"><span>Net UPI (in − out)</span><strong>{money(round2(upiIn - upiOut))}</strong></div>
+              </div>
+            </Card>
+          )}
 
           <Card title="Summary of the day">
             <div className="chips">
