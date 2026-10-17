@@ -56,8 +56,13 @@ export default function Layout() {
     const channel = supabase
       .channel('db-changes')
       .on('postgres_changes', { event: '*', schema: 'public' }, refresh)
-      .subscribe();
+      .subscribe((status) => { if (status === 'SUBSCRIBED') refresh(); });
+    const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisible);
       supabase.removeChannel(channel);
     };
   }, []);

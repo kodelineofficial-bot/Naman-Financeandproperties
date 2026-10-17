@@ -5,6 +5,7 @@ import { Amount, Card, Empty, ErrorBox, ExportButton, Loading, Modal, PageHeader
 import { deleteLedgerEntry, getLedger, getOpeningOn } from '../lib/api.js';
 import { LEDGER_KINDS, addDays, counted, fmtDateFull, isUpi, modeLabel, money, round2, sum, toNum, todayStr } from '../lib/format.js';
 import { useAction, useLoad } from '../lib/hooks.js';
+import { displayedLedgerAmount, loanMoneyOnDate } from '../lib/ledgerAmounts.js';
 import { q, supabase } from '../lib/supabase.js';
 
 const LINK_FOR = {
@@ -12,6 +13,7 @@ const LINK_FOR = {
   collection: (r) => `/loans/${r.ref_id}`,
   penalty: (r) => `/loans/${r.ref_id}`,
   loan_advance: (r) => `/loans/${r.ref_id}`,
+  loan_advance_cut: (r) => `/loans/${r.ref_id}`,
   salary: (r) => `/employees/${r.ref_id}`,
   employee_advance: (r) => `/employees/${r.ref_id}`,
 };
@@ -35,10 +37,17 @@ function LedgerTable({ rows, onDelete }) {
                   {r.note && <div className="muted small">{r.note}</div>}
                 </td>
                 <td>{modeLabel(r.mode)}</td>
-                <td className={`num ${isUpi(r) ? 'muted' : ''}`}>{isUpi(r) ? money(r.amount) : <Amount value={r.amount} dir={r.direction} />}</td>
+                <td className={`num ${isUpi(r) ? 'muted' : ''}`}>
+                  {isUpi(r) ? money(displayedLedgerAmount(r)) : <Amount value={displayedLedgerAmount(r)} dir={r.direction} />}
+                  {!isUpi(r) && r.advance_included > 0 && (
+                    <div className="muted small">
+                      Includes {money(r.advance_included)} advance<br />Handed over {money(r.handed_over)}
+                    </div>
+                  )}
+                </td>
                 <td className="num no-print">
                   {/* Advance kept and overdue cuts are part of the loan itself — change them from the loan, not here. */}
-                  {r.kind !== 'loan_advance' && r.mode !== 'renewal' && (
+                  {!['loan_advance', 'loan_advance_cut'].includes(r.kind) && r.mode !== 'renewal' && (
                     <button className="icon-btn danger" title="Delete entry" onClick={() => onDelete(r)}>🗑</button>
                   )}
                 </td>
@@ -98,7 +107,7 @@ export default function DayBook() {
       (l) => toNum(l.paid_on_date) === 0 && toNum(l.balance_upto) > 0 &&
         (l.frequency === 'monthly' ? toNum(l.short_upto) > 0 : !l.paid_till || l.paid_till < date),
     );
-    return { opening, entries, newLoans, missed };
+    return { opening, entries, newLoans: newLoans.map((l) => ({ ...l, ...loanMoneyOnDate(entries, l.id) })), missed };
   }, [date]);
 
   async function onDelete(r) {
@@ -134,7 +143,9 @@ export default function DayBook() {
           columns={[
             { label: 'Date', key: 'entry_date' }, { label: 'Type', value: (r) => LEDGER_KINDS[r.kind]?.short || r.kind },
             { label: 'Party / Details', key: 'party' }, { label: 'Note', key: 'note' }, { label: 'Mode', value: (r) => modeLabel(r.mode) },
-            { label: 'In', value: (r) => (r.direction === 'in' ? r.amount : '') }, { label: 'Out', value: (r) => (r.direction === 'out' ? r.amount : '') },
+            { label: 'In', value: (r) => (r.direction === 'in' ? r.amount : '') }, { label: 'Out', value: (r) => (r.direction === 'out' ? displayedLedgerAmount(r) : '') },
+            { label: 'Actual handed over', value: (r) => r.handed_over ?? '' },
+            { label: 'Advance included in out', value: (r) => r.advance_included ?? '' },
           ]}
         />
         <PrintButton />
@@ -166,11 +177,14 @@ export default function DayBook() {
             </div>
           </Card>
 
+          {outs.some((r) => r.advance_included > 0) && (
+            <p className="muted small">UPI shows the actual transfer. Advance withheld appears as a separate cut and matching income. Cash payouts already include that cut in book out.</p>
+          )}
           <div className="grid-2">
             <Card title={`Money in · जमा (${ins.length})`} flush actions={<strong className="amt-in">{money(totalIn)}</strong>}>
               <LedgerTable rows={ins} onDelete={busy ? () => {} : onDelete} />
             </Card>
-            <Card title={`Money out · नाम (${outs.length})`} flush actions={<strong className="amt-out">{money(totalOut)}</strong>}>
+            <Card title={`Money out · नाम (${outs.length})`} flush actions={<strong className="amt-out">Book total {money(totalOut)}</strong>}>
               <LedgerTable rows={outs} onDelete={busy ? () => {} : onDelete} />
             </Card>
           </div>
@@ -182,7 +196,7 @@ export default function DayBook() {
               ) : (
                 <table className="table">
                   <thead>
-                    <tr><th>Loan</th><th className="num">Principal</th><th className="num">Interest cut</th><th className="num">Loan given</th><th className="num">Advance in</th><th className="num">Handed over</th></tr>
+                    <tr><th>Loan</th><th className="num">Principal</th><th className="num">Interest cut</th><th className="num">Loan given</th><th className="num">Advance in</th><th className="num">Old dues adjusted</th><th className="num">Handed over this day</th></tr>
                   </thead>
                   <tbody>
                     {data.newLoans.map((l) => (
@@ -192,7 +206,8 @@ export default function DayBook() {
                         <td className="num amt-in">{money(l.interest_amount)}</td>
                         <td className="num amt-out">{money(toNum(l.principal) - toNum(l.interest_amount))}</td>
                         <td className="num amt-in">{money(l.advance_amount)}</td>
-                        <td className="num">{money(l.net_disbursable)}</td>
+                        <td className="num">{money(l.adjusted)}</td>
+                        <td className="num">{money(l.handedOver)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -203,7 +218,8 @@ export default function DayBook() {
                       <td className="num">{money(sum(data.newLoans, 'interest_amount'))}</td>
                       <td className="num">{money(sum(data.newLoans, (l) => toNum(l.principal) - toNum(l.interest_amount)))}</td>
                       <td className="num">{money(sum(data.newLoans, 'advance_amount'))}</td>
-                      <td className="num">{money(sum(data.newLoans, 'net_disbursable'))}</td>
+                      <td className="num">{money(sum(data.newLoans, 'adjusted'))}</td>
+                      <td className="num">{money(sum(data.newLoans, 'handedOver'))}</td>
                     </tr>
                   </tfoot>
                 </table>

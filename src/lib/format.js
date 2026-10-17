@@ -182,4 +182,5 @@ export const LEDGER_KINDS = {
   capital_out:      { label: 'Cash Out (निकासी)', short: 'Cash out', dir: 'out' },
   penalty:          { label: 'Penalty (जुर्माना)', short: 'Penalty', dir: 'in' },
   loan_advance:     { label: 'Advance Kept (एडवांस)', short: 'Advance kept', dir: 'in' },
+  loan_advance_cut: { label: 'Advance Cut (एडवांस कटौती)', short: 'Advance cut', dir: 'out' },
 };

@@ -1,5 +1,6 @@
 import { q, supabase } from './supabase.js';
 import { toNum } from './format.js';
+import { withPayoutAmounts } from './ledgerAmounts.js';
 
 export async function getSettings() {
   return q(supabase.from('settings').select('*').eq('id', 1).single());
@@ -40,7 +41,7 @@ export async function getBorrowers() {
 }
 
 export async function getLedger(from, to) {
-  return q(
+  const [entries, payouts] = await Promise.all([q(
     supabase
       .from('ledger')
       .select('*')
@@ -48,7 +49,9 @@ export async function getLedger(from, to) {
       .lte('entry_date', to)
       .order('entry_date', { ascending: true })
       .order('created_at', { ascending: true }),
-  );
+  ), q(supabase.from('loan_disbursements').select('id,amount')
+    .gte('paid_on', from).lte('paid_on', to).neq('mode', 'renewal').neq('mode', 'opening'))]);
+  return withPayoutAmounts(entries, payouts);
 }
 
 /** Delete one ledger row from the right underlying table. */

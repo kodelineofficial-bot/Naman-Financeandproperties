@@ -113,7 +113,7 @@ export function deriveLoan(f, ov, dailyPer10k = 150, freq = 'daily') {
   if (P <= 0) errors.push('Loan amount must be more than 0.');
   if (daily <= 0) errors.push('Installment must be more than 0.');
   if (total <= 0) errors.push('Total repayable must be more than 0.');
-  if (days <= 0) errors.push(`Duration (${FREQ[freq]?.units || 'days'}) must be more than 0.`);
+  if (days <= 0 || !Number.isInteger(days)) errors.push(`Duration (${FREQ[freq]?.units || 'days'}) must be a positive whole number.`);
   if (advance > total) errors.push('Advance kept cannot be more than total repayable.');
   if (net < 0) errors.push('Interest + advance cannot be more than the loan amount.');
   if (f.collection_start_date && f.loan_date && f.collection_start_date < f.loan_date) {

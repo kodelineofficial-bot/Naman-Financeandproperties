@@ -234,7 +234,7 @@ function TxnTable({ rows, onDelete, empty, daily, freq }) {
                 <strong>{money(r.amount)}</strong>
                 {daily > 0 && <div className="muted small">{periodsText(r.amount, daily, freq)}</div>}
               </td>
-              <td>{r.mode === 'advance' ? <span className="badge">Advance kept</span> : modeLabel(r.mode)}</td>
+              <td>{r.mode === 'advance' ? <span className="badge">Advance kept · {modeLabel(r.payment_mode)}</span> : modeLabel(r.mode)}</td>
               <td className="muted">{r.note || ''}</td>
               <td className="num">
                 {r.mode === 'advance' ? (
@@ -281,11 +281,11 @@ export default function LoanDetail() {
       q(supabase.from('loan_summary').select('*').eq('id', id).single()),
       q(supabase.from('loan_disbursements').select('*').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
       q(supabase.from('loan_repayments').select('*').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
-      q(supabase.from('loans').select('renewed_from, penalty_per_day, penalty_opening_date, penalty_opening_amount, from:renewed_from(loan_no)').eq('id', id).single()),
+      q(supabase.from('loans').select('*, from:renewed_from(loan_no)').eq('id', id).single()),
       q(supabase.from('loans').select('id,loan_no,loan_date').eq('renewed_from', id)),
       q(supabase.from('loan_penalty_entries').select('*').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
     ]);
-    return { loan, disb, reps, renewedFrom: link.renewed_from ? { id: link.renewed_from, loan_no: link.from?.loan_no } : null, renewedInto, penalties, ownPenaltyRate: link.penalty_per_day,
+    return { loan, disb, reps, advanceMode: link.advance_mode, renewedFrom: link.renewed_from ? { id: link.renewed_from, loan_no: link.from?.loan_no } : null, renewedInto, penalties, ownPenaltyRate: link.penalty_per_day,
       penaltyOpening: { date: link.penalty_opening_date, amount: link.penalty_opening_amount } };
   }, [id]);
 
@@ -317,6 +317,7 @@ export default function LoanDetail() {
         created_at: '',
         amount: toNum(l.advance_amount),
         mode: 'advance',
+        payment_mode: data.advanceMode || firstPayout?.mode || 'cash',
         note: `Advance kept at loan time (${l.advance_days} ${l.advance_days === 1 ? F.unit : F.units})`,
       }
     : null;
@@ -421,7 +422,7 @@ The old dues cut from this loan (${money(sum(duesCut, 'amount'))}) will be added
           columns={[
             { label: 'Date', key: 'paid_on' }, { label: 'Type', key: 'kind' }, { label: 'Amount', key: 'amount' },
             { label: monthly ? 'Months' : 'Days', value: (r) => (r.kind.startsWith('Given') ? '' : periodsText(r.amount, inst, l.frequency).split(' ·')[0]) },
-            { label: 'Mode', value: (r) => modeLabel(r.mode) }, { label: 'Note', key: 'note' },
+            { label: 'Mode', value: (r) => r.mode === 'advance' ? `Advance kept · ${modeLabel(r.payment_mode)}` : modeLabel(r.mode) }, { label: 'Note', key: 'note' },
           ]}
         />
         <PrintButton />
@@ -655,7 +656,7 @@ The old dues cut from this loan (${money(sum(duesCut, 'amount'))}) will be added
             <div><span>Loan amount (principal)</span><strong>{money(l.principal)}</strong></div>
             <div><span>Interest cut upfront ({toNum(l.interest_pct)}%)</span><strong>{money(l.interest_amount)}</strong></div>
             <div><span>Loan given (cash out)</span><strong className="amt-out">{money(toNum(l.principal) - toNum(l.interest_amount))}</strong></div>
-            <div><span>Advance kept ({l.advance_days} {F.units}) · income</span><strong className="amt-in">{money(l.advance_amount)}</strong></div>
+            <div><span>Advance kept ({l.advance_days} {F.units}) · {modeLabel(advanceRow?.payment_mode)} income</span><strong className="amt-in">{money(l.advance_amount)}</strong></div>
             <div className="kv-total"><span>Net cash to hand over</span><strong>{money(l.net_disbursable)}</strong></div>
             <div><span>Loan type</span><strong>{F.label} · {F.hi}</strong></div>
             <div><span>{F.label} installment</span><strong>{money(l.daily_installment)}{F.per}</strong></div>

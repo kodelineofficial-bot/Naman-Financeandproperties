@@ -62,13 +62,28 @@ Each transaction table (`loan_disbursements`, `loan_repayments`, `expenses`, `sa
 
 When you edit or delete any entry, every report changes with it. Supabase Realtime refreshes all open screens, so if a collection agent enters a payment on their phone, the owner's screen updates too.
 
+**Editing loan terms (migration 020):** changing duration keeps the current installment and recalculates total repayable, so the calendar, end date, balance and collection sheet agree. Changing total recalculates duration. Edit terms also shows each recorded cash/UPI payout. A single fully recorded payout can follow the corrected cash to give automatically; partial or multiple payouts stay individually editable. Old-balance adjustments remain linked and fixed. The terms and payouts save in one database transaction; conflicting edits require reloading. Extending a paid-off loan reopens its remaining balance. Open screens also refresh after reconnecting or returning to the tab.
+
+For an incorrect recorded payout, open **Edit terms**, verify **Recorded money given**, and save. This corrects the original payout on its original date, so the Day Book and all later cash balances recalculate. The new-loans table separates actual handover from old dues adjusted. Excel exports include actual handover and advance breakdown.
+
+**Advance payment mode (migration 021):** New Loan, Renew Loan and Edit terms have a separate **Advance received via** Cash/UPI selector. UPI disbursements show only the amount actually transferred, with no advance added. Cash book out keeps the existing payout + advance rule. Advance income uses its own selected mode: Cash is included in cash income; UPI is shown but excluded from cash balances. The same ledger feeds Day Book, Dashboard, Daily Summary and Monthly Report. Existing loans with no selected advance mode retain their previous payout-based mode until edited.
+
+**Retained advance cut (migration 022):** advance kept is deducted from the loan, so its income needs a matching out entry. A UPI payout of ₹3,550 from ₹3,700 before advance therefore shows ₹3,550 UPI out, ₹150 advance cut/out in the selected advance mode, and ₹150 advance income in the same mode. With Cash advance, the ₹150 cut and ₹150 income cancel in cash balance. Cash payouts already include the cut in their gross out, so no extra cut is added. Cuts appear once, follow the first actual payout date, and are included in daily/monthly loan-given totals. They do not create another repayment or reduce the loan balance twice.
+
+The latest Karan Office clarification is in `supabase/repairs/karan_office_230.sql`: #230 (17 October) is ₹3,700 before advance − ₹150 kept = **₹3,550 actual UPI sent**, with ₹150 Cash advance cut and income. #225 (16 October) keeps ₹2,450 actual UPI sent and records ₹100 Cash advance cut and income. The repair verifies the borrower, loan IDs, dates and amounts; it never subtracts advance again from an already net payout. It restores #230 to ₹3,550 only if the superseded ₹3,400 repair was already applied. Run after migrations 021 and 022; rerunning is safe.
+
+**Upgrading an existing installation:** apply migrations 020, 021 and 022 in order before deploying this frontend. Migration 021 also includes the updated atomic Edit terms function. If 021 and the Karan repair are already applied, run 022 to add the matching cuts; no second data correction is necessary. General migrations do not guess or rewrite historical payouts; the separate Karan repair is narrowly checked.
+
+**Verification:** `npm test` covers term dependencies and calendar/payout regressions. `tests/loanEdits.sql` checks the save function against the real ledger and reports in an isolated database with all migrations applied; all fixtures roll back.
+`tests/advanceMode.sql` checks every Cash/UPI payout/advance combination, legacy mode fallback, mode edits, multiple payouts, renewals, and daily/monthly cashflow.
+
 ---
 
 ## Setup (about 15 minutes)
 
 ### 1. Supabase
 1. Create a project at https://supabase.com and choose region **Mumbai (ap-south-1)**.
-2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql`, `002_security_hardening.sql`, `003_multiday_and_attendance.sql`, `004_loan_renewal.sql`, `005_no_future_money_dates.sql`, `006_penalty_and_whatsapp_templates.sql`, `007_advance_covers_first_days.sql`, `008_advance_as_income.sql`, `009_loan_penalty_amount.sql`, `010_employee_leave_cut.sql`, `011_monthly_loans.sql`, `012_default_freeze_resume.sql`, `013_profile_photos.sql`, `014_old_defaulters.sql`, `015_penalty_opening.sql`, `016_cut_old_overdue.sql`, `017_overdue_cut_in_ledger.sql`, `018_upi_not_in_cash.sql`, `019_renewal_in_ledger_cash_start.sql`).
+2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql` through `022_advance_cut_offset.sql`).
 3. *(Optional demo data)* Run `supabase/seed.sql`.
 4. **Authentication → Users → Add user**: enter the owner's email and password, and tick *Auto confirm*.
 5. Make that user an admin (SQL Editor):
@@ -110,6 +125,7 @@ supabase/
   migrations/011_monthly_loans.sql   monthly loans (loans.frequency, periods_due / period_date, views use installments)
   migrations/016_cut_old_overdue.sql   cut old loans' overdue from a new loan (old loans keep running)
   migrations/019_renewal_in_ledger_cash_start.sql   renewal shows as loan given + collection; cash in hand counted from Settings → Cash start date
+  migrations/020_edit_loan_terms_sync.sql   save loan terms and payout corrections atomically
   seed.sql                    optional demo data
 src/
   lib/        supabase client, formatting, loan maths, data hooks

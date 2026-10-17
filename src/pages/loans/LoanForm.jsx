@@ -6,6 +6,7 @@ import { useSettings } from '../../context/SettingsContext.jsx';
 import { getBorrowers } from '../../lib/api.js';
 import { fmtDateLong, money, round2, toNum, todayStr } from '../../lib/format.js';
 import { FREQ, deriveLoan, freqOf } from '../../lib/loanMath.js';
+import { canSyncPayout, isCashDisbursement, loanOverridesAfterEdit, loanPayoutEdits } from '../../lib/loanEdits.js';
 import { useAction, useLoad } from '../../lib/hooks.js';
 import { q, supabase } from '../../lib/supabase.js';
 import { BORROWER_FIELDS, BorrowerFields, cleanBorrower } from './BorrowerForm.jsx';
@@ -13,7 +14,7 @@ import { BORROWER_FIELDS, BorrowerFields, cleanBorrower } from './BorrowerForm.j
 const AUTO_FIELDS = ['interest_amount', 'daily_installment', 'total_repayable', 'duration_days', 'advance_amount'];
 
 /** Number input that shows the calculated value until the user types their own. */
-function AutoInput({ name, form, ov, derived, setForm, setOv, step = 'any' }) {
+function AutoInput({ name, form, ov, derived, onChange, onAuto, step = 'any' }) {
   const overridden = !!ov[name];
   const value = overridden ? form[name] : derived[name];
   return (
@@ -23,13 +24,10 @@ function AutoInput({ name, form, ov, derived, setForm, setOv, step = 'any' }) {
         min="0"
         step={step}
         value={value === 0 && !overridden ? '0' : value}
-        onChange={(e) => {
-          setForm((f) => ({ ...f, [name]: e.target.value }));
-          setOv((o) => ({ ...o, [name]: true }));
-        }}
+        onChange={(e) => onChange(name, e.target.value)}
       />
       {overridden ? (
-        <button type="button" className="auto-tag" title="Go back to auto calculation" onClick={() => setOv((o) => ({ ...o, [name]: false }))}>
+        <button type="button" className="auto-tag" title="Go back to auto calculation" onClick={() => onAuto(name)}>
           ↺ auto
         </button>
       ) : (
@@ -60,6 +58,7 @@ export default function LoanForm() {
     duration_days: '',
     advance_days: '10',
     advance_amount: '',
+    advance_mode: 'cash',
     penalty_per_day: '',
     loan_date: today,
     collection_start_date: today,
@@ -75,6 +74,11 @@ export default function LoanForm() {
   const [giveAmount, setGiveAmount] = useState('');
   const [giveMode, setGiveMode] = useState('cash');
   const [ready, setReady] = useState(!isEdit);
+  const [loadError, setLoadError] = useState(null);
+  const [originalLoan, setOriginalLoan] = useState(null);
+  const [disbursements, setDisbursements] = useState([]);
+  const [payoutAmounts, setPayoutAmounts] = useState({});
+  const [syncPayout, setSyncPayout] = useState(false);
   const [defaultsApplied, setDefaultsApplied] = useState(false);
 
   const borrowers = useLoad(getBorrowers, []);
@@ -138,12 +142,23 @@ export default function LoanForm() {
     setDefaultsApplied(true);
   }, [settings, isEdit, defaultsApplied]);
 
-  // Load an existing loan for editing — all amounts treated as manual so nothing shifts.
+  // Preserve loaded amounts; derive duration from the schedule that reports use.
   useEffect(() => {
     if (!isEdit) return;
+    let alive = true;
+    setReady(false);
+    setLoadError(null);
     (async () => {
       try {
-        const l = await q(supabase.from('loans').select('*').eq('id', id).single());
+        const [l, payouts] = await Promise.all([
+          q(supabase.from('loans').select('*').eq('id', id).single()),
+          q(supabase.from('loan_disbursements').select('*').eq('loan_id', id).order('paid_on').order('created_at').order('id')),
+        ]);
+        if (!alive) return;
+        setOriginalLoan(l);
+        setDisbursements(payouts);
+        setPayoutAmounts({});
+        setSyncPayout(canSyncPayout(l, payouts));
         setForm({
           frequency: l.frequency || 'daily',
           principal: String(l.principal),
@@ -155,19 +170,23 @@ export default function LoanForm() {
           duration_days: String(l.duration_days),
           advance_days: String(l.advance_days),
           advance_amount: String(l.advance_amount),
+          advance_mode: l.advance_mode || (payouts.find(isCashDisbursement)?.mode === 'upi' ? 'upi' : 'cash'),
           penalty_per_day: l.penalty_per_day == null ? '' : String(l.penalty_per_day),
           loan_date: l.loan_date,
           collection_start_date: l.collection_start_date,
           status: l.status,
           notes: l.notes || '',
         });
-        setOv(Object.fromEntries(AUTO_FIELDS.map((k) => [k, true])));
+        setOv({ ...Object.fromEntries(AUTO_FIELDS.map((k) => [k, true])), duration_days: false });
         setBorrowerId(l.borrower_id);
         setReady(true);
       } catch (e) {
+        if (!alive) return;
+        setLoadError(e);
         toast.error(e.message);
       }
     })();
+    return () => { alive = false; };
   }, [id, isEdit, toast]);
 
   const dailyPer10k = settings?.default_daily_per_10k ?? 150;
@@ -189,6 +208,9 @@ export default function LoanForm() {
     setOv((o) => ({ ...o, daily_installment: false, duration_days: false, advance_amount: false }));
   }
   const cashToGive = round2(d.net - adjustAmt - cutTotal);
+  const payoutEdits = originalLoan ? loanPayoutEdits(originalLoan, disbursements, d.net, syncPayout, payoutAmounts) : [];
+  const adjustedPayout = disbursements.filter((r) => !isCashDisbursement(r)).reduce((total, r) => total + toNum(r.amount), 0);
+  const recordedPayout = round2(adjustedPayout + payoutEdits.reduce((total, r) => total + r.amount, 0));
   const renewErrors = [];
   if (renewId && old) {
     if (!['active', 'defaulted'].includes(old.status)) renewErrors.push(`Loan #${old.loan_no} is not running — cannot renew.`);
@@ -201,10 +223,18 @@ export default function LoanForm() {
     if (r.cut > r.max + 0.001) renewErrors.push(`Loan #${r.loan_no}: cannot cut more than its balance ${money(r.max)}.`);
   }
   if (!renewId && cutTotal > 0 && cashToGive < 0) renewErrors.push(`Old dues ${money(cutTotal)} are more than this loan's cash ${money(d.net)} — make the new loan bigger or cut less.`);
-  const allErrors = [...d.errors, ...renewErrors];
+  const payoutErrors = [];
+  if (isEdit && payoutEdits.some((r) => r.amount <= 0)) payoutErrors.push('Each recorded payout must be more than 0. Remove an incorrect payout from the loan page.');
+  if (isEdit && recordedPayout > d.net + 0.005) payoutErrors.push(`Recorded payouts exceed cash to give by ${money(recordedPayout - d.net)}. Correct the amount handed over below.`);
+  const allErrors = [...d.errors, ...renewErrors, ...payoutErrors];
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-  const autoProps = { form, ov, derived: d, setForm, setOv };
+  function changeField(name, value, manual = true) {
+    // Materialize calculated values before switching which field drives them.
+    setForm((f) => ({ ...f, ...Object.fromEntries(AUTO_FIELDS.map((k) => [k, String(d[k])])), [name]: value }));
+    setOv((o) => loanOverridesAfterEdit(o, name, manual));
+  }
+  const set = (k) => (e) => changeField(k, e.target.value);
+  const autoProps = { form, ov, derived: d, onChange: changeField, onAuto: (name) => changeField(name, String(d[name]), false) };
 
   const filteredBorrowers = useMemo(() => {
     const s = borrowerSearch.trim().toLowerCase();
@@ -234,6 +264,7 @@ export default function LoanForm() {
       duration_days: d.duration_days,
       advance_days: Math.max(0, Math.round(toNum(form.advance_days))),
       advance_amount: d.advance_amount,
+      advance_mode: form.advance_mode,
       // Blank = follow the penalty rule in Settings.
       penalty_per_day: form.penalty_per_day === '' ? null : Math.max(0, round2(form.penalty_per_day)),
       loan_date: form.loan_date,
@@ -243,9 +274,12 @@ export default function LoanForm() {
 
     const res = await run(async () => {
       if (isEdit) {
-        await q(supabase.from('loans').update({ ...loanPayload, status: form.status }).eq('id', id));
-        // Auto-close if the new total is already collected (a manual "closed"/"defaulted" choice is kept).
-        if (form.status === 'active') await q(supabase.rpc('recalc_loan_status', { p_loan: id }));
+        await q(supabase.rpc('edit_loan_terms', {
+          p_loan: id,
+          p_terms: { ...loanPayload, status: form.status },
+          p_disbursements: payoutEdits.map((r) => ({ id: r.id, amount: r.amount, original_amount: r.original_amount })),
+          p_expected_updated_at: originalLoan.updated_at,
+        }));
         return { id };
       }
       let bId = borrowerId;
@@ -288,6 +322,7 @@ export default function LoanForm() {
     if (res) navigate(`/loans/${res.id}`);
   }
 
+  if (loadError) return <ErrorBox error={loadError} />;
   if (!ready) return <Loading />;
 
   return (
@@ -438,7 +473,7 @@ export default function LoanForm() {
                 <AutoInput name="total_repayable" {...autoProps} />
               </Field>
 
-              <Field label={`Duration (${F.units})`} hint={`Type ${F.units} → installment = total ÷ ${F.units} (or total = installment × ${F.units} if you typed the installment)`}>
+              <Field label={`Duration (${F.units})`} hint={`Changing ${F.units} keeps the installment and updates total = installment × ${F.units}. Changing total recalculates the duration.`}>
                 <AutoInput name="duration_days" step="1" {...autoProps} />
               </Field>
               <Field label={`Advance installments kept (${F.units})`} hint={monthly ? 'e.g. 1 month × installment, kept upfront' : 'e.g. 10 days × daily, kept upfront'}>
@@ -446,6 +481,12 @@ export default function LoanForm() {
               </Field>
               <Field label="Advance amount (₹)">
                 <AutoInput name="advance_amount" {...autoProps} />
+              </Field>
+              <Field label="Advance received via · एडवांस कैसे लिया?" hint="The retained advance has a matching cut and income in this mode. It does not add extra cash to the balance.">
+                <select required value={form.advance_mode} onChange={set('advance_mode')}>
+                  <option value="cash">Cash · नकद</option>
+                  <option value="upi">UPI</option>
+                </select>
               </Field>
               <Field
                 label="Penalty per late day (₹) · जुर्माना"
@@ -467,6 +508,7 @@ export default function LoanForm() {
                     <option value="closed">Closed</option>
                     <option value="defaulted">Defaulted</option>
                     <option value="cancelled">Cancelled</option>
+                    {form.status === 'renewed' && <option value="renewed">Renewed</option>}
                   </select>
                 </Field>
               )}
@@ -476,6 +518,29 @@ export default function LoanForm() {
             </div>
           </Card>
 
+          {isEdit && (
+            <Card title="Recorded money given · दिए हुए पैसे">
+              <p className="muted small">Correct the actual amount handed over here. Saving updates the original payout in the Day Book, cash balance and reports.</p>
+              {canSyncPayout(originalLoan, disbursements) && (
+                <label className="check">
+                  <input type="checkbox" checked={syncPayout} onChange={(e) => { setSyncPayout(e.target.checked); setPayoutAmounts({}); }} />
+                  Match the recorded payout to cash to give
+                </label>
+              )}
+              {payoutEdits.length === 0 ? <p className="muted small">No cash or UPI payout recorded. Use Give money on the loan page to record one.</p> : (
+                <div className="form-grid three">
+                  {payoutEdits.map((r) => (
+                    <Field key={r.id} label={`Amount handed over · ${fmtDateLong(r.paid_on)}`} hint={`${r.mode.toUpperCase()} · was ${money(r.original_amount)}. UPI shows only the amount transferred; cash book out includes advance.`}>
+                      <input type="number" min="0.01" step="0.01" required value={payoutAmounts[r.id] ?? r.amount} onChange={(e) => setPayoutAmounts((amounts) => ({ ...amounts, [r.id]: e.target.value }))} />
+                    </Field>
+                  ))}
+                </div>
+              )}
+              {adjustedPayout > 0 && <p className="muted small">Old balance adjusted: {money(adjustedPayout)}. This stays linked to the original loan.</p>}
+              <p className="muted small">Still to give after saving: <strong>{money(Math.max(0, d.net - recordedPayout))}</strong></p>
+            </Card>
+          )}
+
           {!isEdit && (
             <Card title="3 · Give money now? (पैसे देना)">
               <label className="check">
@@ -484,11 +549,19 @@ export default function LoanForm() {
               </label>
               {giveNow && (
                 <div className="form-grid three">
-                  <Field label="Amount given now" hint={`Cash payable is ${money(cashToGive)}. Give the rest later from the loan page.`}>
+                  <Field label="Amount given now" hint={`Enter the actual cash/UPI handed over, after advance. Do not subtract advance again. Full payable: ${money(cashToGive)}.`}>
                     <input type="number" min="0" step="any" value={giveAmount} placeholder={String(cashToGive)} onChange={(e) => setGiveAmount(e.target.value)} />
                   </Field>
                   <Field label="Mode"><ModeSelect value={giveMode} onChange={setGiveMode} /></Field>
                 </div>
+              )}
+              {giveNow && d.advance_amount > 0 && (
+                <p className="muted small">
+                  Before advance {money(round2((giveAmount === '' ? cashToGive : toNum(giveAmount)) + d.advance_amount))}
+                  {' − '}advance kept {money(d.advance_amount)} ({form.advance_mode === 'upi' ? 'UPI' : 'Cash'})
+                  {' = '}actual {giveMode === 'upi' ? 'UPI sent' : 'handed over'} {money(giveAmount === '' ? cashToGive : giveAmount)}.
+                  {' '}The retained advance has a matching cut and income in its selected mode; it is not extra cash received.
+                </p>
               )}
             </Card>
           )}
@@ -500,7 +573,7 @@ export default function LoanForm() {
             <div className="calc-row"><span>Loan amount</span><strong>{money(d.principal)}</strong></div>
             <div className="calc-row minus"><span>− Interest cut ({d.effInterestPct}%)</span><strong>{money(d.interest_amount)}</strong></div>
             <div className="calc-row"><span>Loan given (cash out)</span><strong>{money(d.principal - d.interest_amount)}</strong></div>
-            <div className="calc-row minus"><span>− Advance kept ({form.advance_days || 0} {F.units}) · income</span><strong>{money(d.advance_amount)}</strong></div>
+            <div className="calc-row minus"><span>− Advance kept ({form.advance_days || 0} {F.units}) · {form.advance_mode === 'upi' ? 'UPI' : 'Cash'} income</span><strong>{money(d.advance_amount)}</strong></div>
             {renewId && (
               <div className="calc-row minus"><span>− Old loan #{old?.loan_no} balance</span><strong>{money(adjustAmt)}</strong></div>
             )}
