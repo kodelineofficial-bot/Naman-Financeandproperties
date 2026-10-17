@@ -169,7 +169,8 @@ kbd { border: 1px solid var(--line-strong); border-bottom-width: 2px; padding: 0
 .stat-red .stat-value { color: var(--red); }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-.grid-2 > .card { margin-bottom: 18px; }
+.grid-2 > .card, .grid-2 > .card-tap > .card { margin-bottom: 18px; }
+.grid-2 > .card-tap { min-width: 0; }
 .grid-2-wide { grid-template-columns: 2fr 1fr; }
 
 .kv-list > div { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px dashed var(--line); }
@@ -385,6 +386,13 @@ button.hbar:hover, .hbar.active { background: #f6efe1; }
 .modal-backdrop { position: fixed; inset: 0; background: rgba(40, 20, 10, 0.45); display: grid; place-items: center; z-index: 100; padding: 16px; }
 .modal { background: var(--paper); border-radius: 14px; width: 100%; max-width: 520px; max-height: calc(100vh - 32px); overflow-y: auto; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); }
 .modal-wide { max-width: 760px; }
+.modal-full { max-width: 1200px; height: calc(100vh - 32px); }
+.big-table .table { font-size: 17px; }
+.big-table .table th, .big-table .table td { padding: 12px 14px; }
+.big-table .table .small { font-size: 14px; }
+.card-tap { cursor: pointer; }
+.card-tap > .card { transition: box-shadow 0.15s; }
+.card-tap:hover > .card { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); }
 .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--paper); }
 .modal-head h3 { font-family: 'Playfair Display', serif; color: var(--maroon-dark); font-size: 18px; }
 .modal-head .icon-btn { font-size: 24px; }

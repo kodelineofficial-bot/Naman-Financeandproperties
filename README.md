@@ -68,7 +68,7 @@ When you edit or delete any entry, every report changes with it. Supabase Realti
 
 ### 1. Supabase
 1. Create a project at https://supabase.com and choose region **Mumbai (ap-south-1)**.
-2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql`, `002_security_hardening.sql`, `003_multiday_and_attendance.sql`, `004_loan_renewal.sql`, `005_no_future_money_dates.sql`, `006_penalty_and_whatsapp_templates.sql`, `007_advance_covers_first_days.sql`, `008_advance_as_income.sql`, `009_loan_penalty_amount.sql`, `010_employee_leave_cut.sql`, `011_monthly_loans.sql`, `012_default_freeze_resume.sql`, `013_profile_photos.sql`, `014_old_defaulters.sql`, `015_penalty_opening.sql`, `016_cut_old_overdue.sql`).
+2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql`, `002_security_hardening.sql`, `003_multiday_and_attendance.sql`, `004_loan_renewal.sql`, `005_no_future_money_dates.sql`, `006_penalty_and_whatsapp_templates.sql`, `007_advance_covers_first_days.sql`, `008_advance_as_income.sql`, `009_loan_penalty_amount.sql`, `010_employee_leave_cut.sql`, `011_monthly_loans.sql`, `012_default_freeze_resume.sql`, `013_profile_photos.sql`, `014_old_defaulters.sql`, `015_penalty_opening.sql`, `016_cut_old_overdue.sql`, `017_overdue_cut_in_ledger.sql`, `018_upi_not_in_cash.sql`, `019_renewal_in_ledger_cash_start.sql`).
 3. *(Optional demo data)* Run `supabase/seed.sql`.
 4. **Authentication → Users → Add user**: enter the owner's email and password, and tick *Auto confirm*.
 5. Make that user an admin (SQL Editor):
@@ -109,6 +109,7 @@ supabase/
   migrations/010_employee_leave_cut.sql   salary cut per absent day set on each employee
   migrations/011_monthly_loans.sql   monthly loans (loans.frequency, periods_due / period_date, views use installments)
   migrations/016_cut_old_overdue.sql   cut old loans' overdue from a new loan (old loans keep running)
+  migrations/019_renewal_in_ledger_cash_start.sql   renewal shows as loan given + collection; cash in hand counted from Settings → Cash start date
   seed.sql                    optional demo data
 src/
   lib/        supabase client, formatting, loan maths, data hooks

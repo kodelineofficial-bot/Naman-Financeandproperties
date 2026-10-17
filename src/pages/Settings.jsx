@@ -25,6 +25,7 @@ export default function Settings() {
         phone: settings.phone || '',
         address: settings.address || '',
         opening_balance: String(settings.opening_balance ?? 0),
+        cash_start_date: settings.cash_start_date || '',
         default_interest_pct: String(settings.default_interest_pct ?? 4),
         default_markup_pct: String(settings.default_markup_pct ?? 20),
         default_daily_per_10k: String(settings.default_daily_per_10k ?? 150),
@@ -67,6 +68,7 @@ export default function Settings() {
               phone: f.phone.trim() || null,
               address: f.address.trim() || null,
               opening_balance: round2(f.opening_balance),
+              cash_start_date: f.cash_start_date || null,
               default_interest_pct: toNum(f.default_interest_pct),
               default_markup_pct: toNum(f.default_markup_pct),
               default_daily_per_10k: toNum(f.default_daily_per_10k),
@@ -107,7 +109,10 @@ export default function Settings() {
               <Field label="Owner name"><input value={f.owner_name} onChange={set('owner_name')} /></Field>
               <Field label="Phone"><input value={f.phone} onChange={set('phone')} /></Field>
               <Field label="Address"><input value={f.address} onChange={set('address')} /></Field>
-              <Field label="Opening cash balance (₹)" hint="Cash in hand on the day you started using this software" span={2}>
+              <Field label="Cash start date · कैश शुरू तारीख" hint="Cash in hand is counted from this day. Older entries still show and still count for loans.">
+                <input type="date" value={f.cash_start_date} max={todayStr()} onChange={set('cash_start_date')} />
+              </Field>
+              <Field label="Opening cash balance (₹)" hint="Cash in hand at the start of the cash start date">
                 <input type="number" step="any" value={f.opening_balance} onChange={set('opening_balance')} />
               </Field>
             </div>

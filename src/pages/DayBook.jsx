@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useToast } from '../components/Toast.jsx';
-import { Amount, Card, Empty, ErrorBox, ExportButton, Loading, PageHeader, PrintButton, Stat } from '../components/ui.jsx';
+import { Amount, Card, Empty, ErrorBox, ExportButton, Loading, Modal, PageHeader, PrintButton, Stat } from '../components/ui.jsx';
 import { deleteLedgerEntry, getLedger, getOpeningOn } from '../lib/api.js';
 import { LEDGER_KINDS, addDays, counted, fmtDateFull, isUpi, modeLabel, money, round2, sum, toNum, todayStr } from '../lib/format.js';
 import { useAction, useLoad } from '../lib/hooks.js';
@@ -47,6 +48,25 @@ function LedgerTable({ rows, onDelete }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** A card that opens in a big popup when tapped (links inside still open the loan). */
+function TapCard({ title, bigTitle, children }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <div className="card-tap" onClick={(e) => !e.target.closest('a') && setOpen(true)}>
+        <Card title={title} flush actions={<button type="button" className="btn btn-sm">⤢ Open big</button>}>
+          {children}
+        </Card>
+      </div>
+      {open && (
+        <Modal full title={bigTitle || title} onClose={() => setOpen(false)}>
+          <div className="big-table">{children}</div>
+        </Modal>
+      )}
+    </>
   );
 }
 
@@ -156,7 +176,7 @@ export default function DayBook() {
           </div>
 
           <div className="grid-2">
-            <Card title={`New loans this day (${data.newLoans.length})`} flush>
+            <TapCard title={`New loans this day (${data.newLoans.length})`} bigTitle={`New loans · ${fmtDateFull(date)}`}>
               {data.newLoans.length === 0 ? (
                 <Empty>No new loan on this day.</Empty>
               ) : (
@@ -188,9 +208,9 @@ export default function DayBook() {
                   </tfoot>
                 </table>
               )}
-            </Card>
+            </TapCard>
 
-            <Card title={`Did not pay this day · नहीं दिया (${data.missed.length})`} flush>
+            <TapCard title={`Did not pay this day · नहीं दिया (${data.missed.length})`} bigTitle={`Did not pay · नहीं दिया · ${fmtDateFull(date)}`}>
               {data.missed.length === 0 ? (
                 <Empty>Everyone paid. 🎉</Empty>
               ) : (
@@ -212,7 +232,7 @@ export default function DayBook() {
                   </tbody>
                 </table>
               )}
-            </Card>
+            </TapCard>
           </div>
         </>
       )}

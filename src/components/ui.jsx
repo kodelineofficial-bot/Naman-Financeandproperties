@@ -61,7 +61,7 @@ export function ModeSelect({ value, onChange }) {
   );
 }
 
-export function Modal({ title, onClose, children, wide }) {
+export function Modal({ title, onClose, children, wide, full }) {
   useEffect(() => {
     const h = (e) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', h);
@@ -70,7 +70,7 @@ export function Modal({ title, onClose, children, wide }) {
 
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true">
+      <div className={`modal ${wide ? 'modal-wide' : ''} ${full ? 'modal-full' : ''}`} role="dialog" aria-modal="true">
         <div className="modal-head">
           <h3>{title}</h3>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">
