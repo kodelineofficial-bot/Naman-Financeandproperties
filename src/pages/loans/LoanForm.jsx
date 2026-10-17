@@ -123,8 +123,21 @@ export default function LoanForm() {
     .filter((r) => cuts[r.id]?.on)
     .map((r) => ({ ...r, cut: round2(cuts[r.id].amount), max: round2(toNum(r.outstanding)) }));
   const cutTotal = round2(cutRows.reduce((t, r) => t + r.cut, 0));
+  // Monthly loan: pick how many months to cut; amount = months × installment, never past the balance.
+  const monthsLeft = (r) => Math.ceil(round2(toNum(r.outstanding)) / toNum(r.daily_installment) - 0.001) || 0;
+  const monthsAmount = (r, months) => round2(Math.min(months * toNum(r.daily_installment), toNum(r.outstanding)));
   function toggleCut(r, on) {
-    setCuts((c) => ({ ...c, [r.id]: { on, amount: c[r.id]?.amount ?? String(round2(toNum(r.overdue))) } }));
+    setCuts((c) => {
+      if (c[r.id]) return { ...c, [r.id]: { ...c[r.id], on } };
+      if (r.frequency !== 'monthly') return { ...c, [r.id]: { on, amount: String(round2(toNum(r.overdue))) } };
+      // default: the overdue months, at least one
+      const months = Math.min(Math.max(1, Math.ceil(toNum(r.overdue) / toNum(r.daily_installment) - 0.001)), monthsLeft(r));
+      return { ...c, [r.id]: { on, months: String(months), amount: String(monthsAmount(r, months)) } };
+    });
+  }
+  function setCutMonths(r, value) {
+    const months = value === '' ? '' : Math.max(0, Math.min(Math.floor(toNum(value)), monthsLeft(r)));
+    setCuts((c) => ({ ...c, [r.id]: { ...c[r.id], months: String(months), amount: String(monthsAmount(r, toNum(months))) } }));
   }
   const discount = renewId ? round2(Math.max(0, oldBalance - adjustAmt)) : 0;
 
@@ -399,25 +412,50 @@ export default function LoanForm() {
                   {(running.data || []).map((r) => {
                     const c = cuts[r.id];
                     const overdue = round2(toNum(r.overdue));
+                    const monthly = r.frequency === 'monthly';
                     return (
                       <div key={r.id} className="help-box renew-box" style={{ marginTop: 12 }}>
-                        ⚠ This borrower already has <strong>Loan #{r.loan_no}</strong> ({money(r.principal)}) running with{' '}
+                        ⚠ This borrower already has <strong>Loan #{r.loan_no}</strong>
+                        {monthly && <> (monthly · {money(r.daily_installment)}/month)</>} ({money(r.principal)}) running with{' '}
                         <strong>{money(r.outstanding)}</strong> still to collect
                         {overdue > 0 ? <> · overdue (बकाया) <strong>{money(overdue)}</strong></> : ' · nothing overdue'}.
                         {toNum(r.outstanding) > 0 && (
                           <div style={{ marginTop: 8 }}>
                             <label className="check">
                               <input type="checkbox" checked={!!c?.on} onChange={(e) => toggleCut(r, e.target.checked)} />
-                              Cut old dues of loan #{r.loan_no} from this new loan (बकाया काटें)
+                              {monthly
+                                ? <>Cut monthly installment of loan #{r.loan_no} from this new loan (मासिक किस्त काटें)</>
+                                : <>Cut old dues of loan #{r.loan_no} from this new loan (बकाया काटें)</>}
                             </label>
                             {c?.on && (
                               <div className="form-grid" style={{ marginTop: 8 }}>
-                                <Field
-                                  label="Amount to cut ₹"
-                                  hint={`Overdue ${money(overdue)} · max ${money(r.outstanding)}. Loan #${r.loan_no} keeps running for the rest. Not cash — not in the cash book.`}
-                                >
-                                  <input type="number" min="0" step="any" value={c.amount} onChange={(e) => setCuts((x) => ({ ...x, [r.id]: { ...x[r.id], amount: e.target.value } }))} />
-                                </Field>
+                                {monthly ? (
+                                  <>
+                                    <Field
+                                      label="Months to cut (कितने महीने)"
+                                      hint={`${money(r.daily_installment)}/month · ${monthsLeft(r)} month${monthsLeft(r) === 1 ? '' : 's'} left on loan #${r.loan_no}`}
+                                    >
+                                      <div className="amount-cell">
+                                        <button type="button" className="step-btn" onClick={() => setCutMonths(r, toNum(c.months) - 1)} aria-label="One month less">−</button>
+                                        <input type="number" min="0" max={monthsLeft(r)} step="1" inputMode="numeric" value={c.months} onChange={(e) => setCutMonths(r, e.target.value)} />
+                                        <button type="button" className="step-btn" onClick={() => setCutMonths(r, toNum(c.months) + 1)} aria-label="One month more">+</button>
+                                      </div>
+                                    </Field>
+                                    <Field
+                                      label="Amount to cut ₹ (auto)"
+                                      hint={`${toNum(c.months) || 0} × ${money(r.daily_installment)}${toNum(c.amount) < toNum(c.months) * toNum(r.daily_installment) ? ` — capped at balance ${money(r.outstanding)}` : ''}. Loan #${r.loan_no} keeps running for the rest. Not cash — not in the cash book.`}
+                                    >
+                                      <input type="text" readOnly value={money(c.amount)} />
+                                    </Field>
+                                  </>
+                                ) : (
+                                  <Field
+                                    label="Amount to cut ₹"
+                                    hint={`Overdue ${money(overdue)} · max ${money(r.outstanding)}. Loan #${r.loan_no} keeps running for the rest. Not cash — not in the cash book.`}
+                                  >
+                                    <input type="number" min="0" step="any" value={c.amount} onChange={(e) => setCuts((x) => ({ ...x, [r.id]: { ...x[r.id], amount: e.target.value } }))} />
+                                  </Field>
+                                )}
                               </div>
                             )}
                           </div>
@@ -578,7 +616,7 @@ export default function LoanForm() {
               <div className="calc-row minus"><span>− Old loan #{old?.loan_no} balance</span><strong>{money(adjustAmt)}</strong></div>
             )}
             {!renewId && cutRows.map((r) => (
-              <div key={r.id} className="calc-row minus"><span>− Loan #{r.loan_no} old dues</span><strong>{money(r.cut)}</strong></div>
+              <div key={r.id} className="calc-row minus"><span>− Loan #{r.loan_no} {r.frequency === 'monthly' ? `monthly installment (${toNum(cuts[r.id]?.months)} month${toNum(cuts[r.id]?.months) === 1 ? '' : 's'})` : 'old dues'}</span><strong>{money(r.cut)}</strong></div>
             ))}
             <div className="calc-row total"><span>Cash to give (देना)</span><strong>{money(cashToGive)}</strong></div>
 

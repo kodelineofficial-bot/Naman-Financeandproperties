@@ -37,7 +37,7 @@ export default function MonthlyLoans() {
     );
     const ids = loans.map((l) => l.id);
     const reps = ids.length
-      ? await q(supabase.from('loan_repayments').select('loan_id,paid_on,amount,mode').in('loan_id', ids))
+      ? await q(supabase.from('loan_repayments').select('loan_id,paid_on,amount,mode,adjusted_into').in('loan_id', ids))
       : [];
     return { loans, reps };
   }, [mEnd]);
@@ -53,7 +53,7 @@ export default function MonthlyLoans() {
         const toCollect = round2(toNum(l.total_repayable) - adv);
         const reps = byLoan[l.id] || [];
         const before = round2(sum(reps.filter((r) => r.paid_on < mStart), 'amount'));
-        const paidInMonth = round2(sum(reps.filter((r) => r.paid_on >= mStart && r.paid_on <= mEnd && r.mode !== 'renewal'), 'amount'));
+        const paidInMonth = round2(sum(reps.filter((r) => r.paid_on >= mStart && r.paid_on <= mEnd && (r.mode !== 'renewal' || r.adjusted_into)), 'amount'));
         const upToEnd = round2(sum(reps.filter((r) => r.paid_on <= mEnd), 'amount'));
         const balanceBefore = Math.max(0, round2(toCollect - before));
         // A defaulted loan is frozen: nothing new falls due from the day it was defaulted.
