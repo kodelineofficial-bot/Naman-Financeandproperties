@@ -62,6 +62,119 @@ function DuesCutModal({ loan, pending, onClose }) {
   );
 }
 
+/**
+ * Give money (a part of the loan's cash), keeping some of it as advance installments if the
+ * borrower asks (migration 028). Still to give ₹3,000, keep ₹1,000 advance → hand over ₹2,000;
+ * Day Book: ₹3,000 loan given, ₹1,000 advance kept (income).
+ */
+function GiveMoneyModal({ loan, pending, defaultDays, onClose }) {
+  const F = freqOf(loan);
+  const inst = toNum(loan.daily_installment);
+  const balance = round2(toNum(loan.outstanding));
+  const canAdvance = inst > 0 && balance > 0 && !loan.old_defaulter;
+  const toast = useToast();
+  const [busy, run] = useAction(toast);
+  // Days ↔ advance, never more than the money given or the loan balance.
+  const advanceFor = (days, amount) => (toNum(days) > 0 ? String(round2(Math.min(toNum(days) * inst, balance, Math.max(0, toNum(amount))))) : '');
+  const daysFor = (adv) => {
+    const n = inst > 0 ? toNum(adv) / inst : 0;
+    return n > 0 && Math.abs(n - Math.round(n)) < 1e-9 ? String(Math.round(n)) : '';
+  };
+  const startAmount = pending > 0 ? String(round2(pending)) : '';
+  const [f, setF] = useState({
+    paid_on: todayStr(), amount: startAmount, mode: 'cash', note: '',
+    keep: canAdvance && defaultDays > 0, days: String(defaultDays || ''), advance: advanceFor(defaultDays, startAmount),
+  });
+  const amount = round2(f.amount);
+  const advance = f.keep ? round2(f.advance) : 0;
+  const cash = round2(amount - advance);
+  const errors = [];
+  if (advance < 0) errors.push('Advance cannot be negative.');
+  if (advance > amount + 0.001) errors.push(`Advance ${money(advance)} is more than the money given ${money(amount)}.`);
+  if (advance > balance + 0.001) errors.push(`Advance ${money(advance)} is more than the loan balance ${money(balance)}.`);
+  const paidTill = advance > 0 ? Math.floor((toNum(loan.collected_total) + advance) / inst + 1e-9) : 0;
+
+  const setDays = (days) => {
+    const d = days === '' ? '' : String(Math.max(0, Math.floor(toNum(days))));
+    setF({ ...f, days: d, advance: advanceFor(d, f.amount) });
+  };
+
+  async function submit(e) {
+    e.preventDefault();
+    if (amount <= 0) return toast.error('Enter an amount.');
+    if (errors.length) return toast.error(errors[0]);
+    if (f.paid_on > todayStr()) return toast.error('Date cannot be in the future · aage ki tareekh nahi');
+    if (amount > pending + 0.001 && !window.confirm(`This is more than the remaining ${money(pending)}. Save anyway?`)) return;
+    const ok = await run(
+      () => q(supabase.rpc('give_loan_money', {
+        p_loan: loan.id, p_date: f.paid_on, p_amount: amount, p_advance: advance, p_mode: f.mode, p_note: f.note.trim() || null,
+      })),
+      advance > 0 ? `${money(amount)} given · ${money(advance)} advance kept · ${money(cash)} handed over` : `${money(amount)} saved`,
+    );
+    if (ok) onClose();
+  }
+
+  return (
+    <Modal title={`Give money · पैसे देना — ${loan.borrower_name}`} onClose={onClose}>
+      <form onSubmit={submit}>
+        <p className="muted small">Still to give on this loan: <strong>{money(pending)}</strong></p>
+        <div className="form-grid">
+          <Field label="Date">
+            <input type="date" required max={todayStr()} value={f.paid_on} onChange={(e) => setF({ ...f, paid_on: e.target.value })} />
+          </Field>
+          <Field label="Money given this time (₹) · इस बार की रकम" hint={f.keep && advance > 0 ? 'Before the advance is kept' : undefined}>
+            <input
+              className="input-big" type="number" inputMode="decimal" min="0" step="any" required autoFocus value={f.amount}
+              onChange={(e) => setF({ ...f, amount: e.target.value, ...(f.days !== '' && { advance: advanceFor(f.days, e.target.value) }) })}
+            />
+          </Field>
+          {canAdvance && (
+            <div className="span-2">
+              <label className="check">
+                <input type="checkbox" checked={f.keep} onChange={(e) => setF({ ...f, keep: e.target.checked })} />
+                Keep advance from this money · इसमें से एडवांस काटें
+              </label>
+            </div>
+          )}
+          {canAdvance && f.keep && (
+            <>
+              <Field label={`Advance ${F.units} · कितने ${F.unitHi}`} hint={`× ${money(inst)} = advance`}>
+                <div className="amount-cell">
+                  <button type="button" className="step-btn" onClick={() => setDays(toNum(f.days) - 1)} aria-label={`One ${F.unit} less`}>−</button>
+                  <input type="number" min="0" step="1" inputMode="numeric" placeholder="0" value={f.days} onChange={(e) => setDays(e.target.value)} />
+                  <button type="button" className="step-btn" onClick={() => setDays(toNum(f.days) + 1)} aria-label={`One ${F.unit} more`}>+</button>
+                </div>
+              </Field>
+              <Field label="Advance amount (₹) · एडवांस" hint={`Balance ${money(balance)}`}>
+                <input type="number" min="0" step="any" value={f.advance} onChange={(e) => setF({ ...f, advance: e.target.value, days: daysFor(e.target.value) })} />
+              </Field>
+            </>
+          )}
+          <Field label="Mode"><ModeSelect value={f.mode} onChange={(v) => setF({ ...f, mode: v })} /></Field>
+          <Field label="Note"><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></Field>
+        </div>
+        {amount > 0 && advance > 0 && errors.length === 0 && (
+          <div className="good-note">
+            {money(amount)} − advance {money(advance)} = hand over <strong>{money(cash)}</strong> ({f.mode === 'upi' ? 'UPI' : modeLabel(f.mode)})
+            {paidTill >= 1 && <> · paid till · यहाँ तक जमा: <strong>{fmtDateLong(periodDate(loan.frequency, loan.collection_start_date, paidTill))}</strong></>}
+            <div className="muted small">
+              Day Book: {money(amount)} loan given ({money(cash)} handed over + {money(advance)} kept) and {money(advance)} advance kept as income.
+              Cash in hand moves only by {money(cash)}.
+            </div>
+          </div>
+        )}
+        {errors.length > 0 && <div className="alert alert-error small">{errors.map((er) => <div key={er}>{er}</div>)}</div>}
+        <div className="form-actions">
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy || errors.length > 0}>
+            {busy ? 'Saving…' : advance > 0 ? `Give · hand over ${money(cash)}` : 'Save'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 function EntryModal({ title, table, loanId, defaultAmount, max, daily, freq = 'daily', collected, startDate, onClose }) {
   const F = FREQ[freq] || FREQ.daily;
   const quick = freq === 'monthly' ? [1, 2, 3, 6, 12] : [1, 2, 3, 4, 7, 10, 15, 30];

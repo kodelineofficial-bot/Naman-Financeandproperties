@@ -247,7 +247,7 @@ export default function DayBook() {
                         <td className="num">{money(l.principal)}</td>
                         <td className="num amt-in">{money(l.interest_amount)}</td>
                         <td className="num amt-out">{money(toNum(l.principal) - toNum(l.interest_amount))}</td>
-                        <td className="num amt-in">{money(l.advance_amount)}</td>
+                        <td className="num amt-in">{money(toNum(l.advance_amount) + l.payoutAdvance)}</td>
                         <td className="num">{money(l.adjusted)}</td>
                         <td className="num">{money(l.handedOver)}</td>
                       </tr>
@@ -259,7 +259,7 @@ export default function DayBook() {
                       <td className="num">{money(sum(data.newLoans, 'principal'))}</td>
                       <td className="num">{money(sum(data.newLoans, 'interest_amount'))}</td>
                       <td className="num">{money(sum(data.newLoans, (l) => toNum(l.principal) - toNum(l.interest_amount)))}</td>
-                      <td className="num">{money(sum(data.newLoans, 'advance_amount'))}</td>
+                      <td className="num">{money(sum(data.newLoans, (l) => toNum(l.advance_amount) + l.payoutAdvance))}</td>
                       <td className="num">{money(sum(data.newLoans, 'adjusted'))}</td>
                       <td className="num">{money(sum(data.newLoans, 'handedOver'))}</td>
                     </tr>

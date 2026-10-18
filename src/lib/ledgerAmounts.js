@@ -13,9 +13,14 @@ export function withPayoutAmounts(entries, payouts) {
 
 export function loanMoneyOnDate(entries, loanId) {
   const rows = entries.filter((r) => r.kind === 'disbursement' && r.ref_id === loanId);
+  // Advance kept from a payout (migration 028): out as 'renewal' on the loan, in as loan_advance.
+  const payoutAdvance = round2(entries
+    .filter((r) => r.kind === 'loan_advance' && r.mode === 'renewal' && r.ref_id === loanId)
+    .reduce((n, r) => n + toNum(r.amount), 0));
   return {
     handedOver: round2(rows.filter((r) => r.mode !== 'renewal').reduce((n, r) => n + toNum(r.handed_over ?? r.amount), 0)),
-    adjusted: round2(rows.filter((r) => r.mode === 'renewal').reduce((n, r) => n + toNum(r.amount), 0)),
+    adjusted: round2(rows.filter((r) => r.mode === 'renewal').reduce((n, r) => n + toNum(r.amount), 0) - payoutAdvance),
+    payoutAdvance,
   };
 }
 
