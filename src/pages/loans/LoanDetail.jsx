@@ -12,6 +12,55 @@ import { FREQ, buildLoanCalendar, freqOf, periodDate, periodsText } from '../../
 import { useAction, useLoad } from '../../lib/hooks.js';
 import { q, supabase } from '../../lib/supabase.js';
 import { DefaulterPayModal, OldDefaulterModal, addedOn } from '../Defaulters.jsx';
+import { DuesCutPicker, duesCutErrors, duesCutRows, saveDuesCuts } from './DuesCut.jsx';
+
+/** Cut another loan's dues (any borrower) from the money still to give on this loan (migration 027). */
+function DuesCutModal({ loan, pending, onClose }) {
+  const toast = useToast();
+  const [busy, run] = useAction(toast);
+  const [picks, setPicks] = useState([]);
+  const [date, setDate] = useState(todayStr());
+  const rows = duesCutRows(picks);
+  const total = round2(rows.reduce((t, r) => t + r.total, 0));
+  const errors = duesCutErrors(rows);
+  if (total > pending + 0.001) errors.push(`Dues ${money(total)} are more than the money still to give ${money(pending)}.`);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (total <= 0) return toast.error('Pick a loan and enter an amount to cut.');
+    if (errors.length) return toast.error(errors[0]);
+    if (date > todayStr()) return toast.error('Date cannot be in the future · aage ki tareekh nahi');
+    const ok = await run(() => saveDuesCuts(loan.id, rows, date), `${money(total)} dues cut · still to give ${money(round2(pending - total))}`);
+    if (ok) onClose();
+  }
+
+  return (
+    <Modal title={`Cut someone's dues · बकाया काटें — ${loan.borrower_name}`} onClose={onClose} wide>
+      <form onSubmit={submit}>
+        <p className="muted small">
+          Still to give on this loan: <strong>{money(pending)}</strong>. Pick the loan whose overdue / penalty {loan.borrower_name} is paying —
+          it is cut from the money you still have to hand over.
+        </p>
+        <div className="form-grid">
+          <Field label="Date">
+            <input type="date" required max={todayStr()} value={date} onChange={(e) => setDate(e.target.value)} />
+          </Field>
+        </div>
+        <DuesCutPicker picks={picks} onChange={setPicks} excludeLoanId={loan.id} />
+        {total > 0 && (
+          <p className="good-note">
+            Cut {money(total)} · then still to give <strong>{money(Math.max(0, round2(pending - total)))}</strong>
+          </p>
+        )}
+        {errors.length > 0 && <div className="alert alert-error small">{errors.map((er) => <div key={er}>{er}</div>)}</div>}
+        <div className="form-actions">
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy || total <= 0 || errors.length > 0}>{busy ? 'Saving…' : 'Cut dues'}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
 
 function EntryModal({ title, table, loanId, defaultAmount, max, daily, freq = 'daily', collected, startDate, onClose }) {
   const F = FREQ[freq] || FREQ.daily;
@@ -269,7 +318,7 @@ function PenaltyOpeningModal({ loan, current, onClose }) {
   );
 }
 
-function TxnTable({ rows, onDelete, empty, daily, freq }) {
+function TxnTable({ rows, onDelete, onUndoCut, empty, daily, freq }) {
   if (!rows.length) return <Empty>{empty}</Empty>;
   return (
     <div className="table-wrap">
@@ -291,7 +340,12 @@ function TxnTable({ rows, onDelete, empty, daily, freq }) {
                 {r.mode === 'advance' ? (
                   <span className="muted small" title="Kept at loan time — change it from Edit terms">🔒</span>
                 ) : r.mode === 'renewal' ? (
-                  r.adjusted_into ? (
+                  r.cut_from && onUndoCut ? (
+                    <span className="nowrap">
+                      <Link className="muted small" to={`/loans/${r.cut_from}`} title="The loan whose dues were cut">loan ↗</Link>{' '}
+                      <button className="btn btn-sm" title="Undo this cut — the dues go back on that loan" onClick={() => onUndoCut(r)}>↩ Undo</button>
+                    </span>
+                  ) : r.adjusted_into ? (
                     <Link className="muted small" to={`/loans/${r.adjusted_into}`} title="Cut from a new loan — delete that loan to undo">🔒 new loan</Link>
                   ) : (
                     <span className="muted small" title="Part of a renewal — cannot be deleted here">🔒</span>
@@ -334,7 +388,7 @@ export default function LoanDetail() {
       q(supabase.from('loan_repayments').select('*').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
       q(supabase.from('loans').select('*, from:renewed_from(loan_no)').eq('id', id).single()),
       q(supabase.from('loans').select('id,loan_no,loan_date').eq('renewed_from', id)),
-      q(supabase.from('loan_penalty_entries').select('*').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
+      q(supabase.from('loan_penalty_entries').select('*, cut:cut_disb_id(loan_id)').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
     ]);
     return { loan, disb, reps, advanceMode: link.advance_mode, renewedFrom: link.renewed_from ? { id: link.renewed_from, loan_no: link.from?.loan_no } : null, renewedInto, penalties, ownPenaltyRate: link.penalty_per_day,
       penaltyOpening: { date: link.penalty_opening_date, amount: link.penalty_opening_amount } };
@@ -345,8 +399,10 @@ export default function LoanDetail() {
 
   const { loan: l, disb, reps, renewedFrom, renewedInto, penalties } = data;
   const renewAdjusted = sum(reps.filter((r) => r.mode === 'renewal' && !r.adjusted_into), 'amount');
-  // Old loans' dues cut from this loan's cash; those loans kept running (migration 016).
-  const duesCut = renewedFrom ? [] : disb.filter((x) => x.mode === 'renewal');
+  // Dues of other loans (own or another borrower's) cut from this loan's cash; those loans kept running (migrations 016, 027).
+  const duesCut = disb.filter((x) => x.mode === 'renewal' && (x.cut_from || !renewedFrom));
+  // This loan's own dues cut into someone's loan: deleting this loan takes them out of that loan too.
+  const cutElsewhere = reps.filter((r) => r.cut_disb_id).length + penalties.filter((r) => r.cut_disb_id).length;
   const isRunning = l.status === 'active' || l.status === 'defaulted';
   const F = freqOf(l);
   const monthly = l.frequency === 'monthly';
@@ -394,6 +450,11 @@ export default function LoanDetail() {
     await run(() => q(supabase.from(table).delete().eq('id', row.id)), 'Entry deleted');
   }
 
+  async function undoCut(row) {
+    if (!window.confirm(`Undo the ${money(row.amount)} cut "${row.note}"?\n\nThe dues go back on that loan and this loan's money still to give goes up by ${money(row.amount)}.`)) return;
+    await run(() => q(supabase.from('loan_disbursements').delete().eq('id', row.id)), 'Cut undone');
+  }
+
   async function setStatus(status) {
     const labels = {
       defaulted: `mark this loan as DEFAULTED?\n\nThe loan stops here: balance stays ${money(outstanding)}, no new installments fall due and no new penalty.` +
@@ -417,7 +478,9 @@ export default function LoanDetail() {
 
 Old loan #${renewedFrom.loan_no} will become running again.` : '') + (duesCut.length ? `
 
-The old dues cut from this loan (${money(sum(duesCut, 'amount'))}) will be added back to those loans.` : ''))) return;
+The old dues cut from this loan (${money(sum(duesCut, 'amount'))}) will be added back to those loans.` : '') + (cutElsewhere ? `
+
+This loan's dues were paid from another loan's cash — that cut is removed too (that loan's money still to give goes up).` : ''))) return;
     const ok = await run(async () => {
       await q(supabase.from('loans').delete().eq('id', id));
       if (renewedFrom) {
@@ -494,12 +557,12 @@ The old dues cut from this loan (${money(sum(duesCut, 'amount'))}) will be added
       {renewedFrom && (
         <div className="help-box renew-box">
           🔁 Renewed from <Link to={`/loans/${renewedFrom.id}`}><strong>Loan #{renewedFrom.loan_no}</strong></Link>.
-          Old balance adjusted from this loan: <strong>{money(sum(disb.filter((d) => d.mode === 'renewal'), 'amount'))}</strong> (no cash).
+          Old balance adjusted from this loan: <strong>{money(sum(disb.filter((d) => d.mode === 'renewal' && !d.cut_from), 'amount'))}</strong> (no cash).
         </div>
       )}
       {duesCut.length > 0 && (
         <div className="help-box renew-box">
-          ✂ Old dues cut from this loan (no cash): {duesCut.map((x, i) => (
+          ✂ Dues cut from this loan (no cash): {duesCut.map((x, i) => (
             <span key={x.id}>{i > 0 && ' · '}{x.note} <strong>{money(x.amount)}</strong></span>
           ))}. Total <strong>{money(sum(duesCut, 'amount'))}</strong>.
         </div>
@@ -620,14 +683,17 @@ The old dues cut from this loan (${money(sum(duesCut, 'amount'))}) will be added
         <Card
           title={`Money given · दिया (${disb.length})`}
           actions={
-            <button className="btn btn-sm" onClick={() => setModal('disb')} disabled={pendingDisb <= 0}>+ Give money</button>
+            <>
+              <button className="btn btn-sm" onClick={() => setModal('dues-cut')} disabled={pendingDisb <= 0 || ['cancelled', 'renewed'].includes(l.status)} title="Pay another borrower's overdue / penalty out of the money still to give">✂ Cut someone&apos;s dues</button>
+              <button className="btn btn-sm" onClick={() => setModal('disb')} disabled={pendingDisb <= 0}>+ Give money</button>
+            </>
           }
           flush
         >
           <div className="card-sub muted small">
             Given: <strong>{money(sum(disb, 'amount'))}</strong> · Still to give: <strong className={pendingDisb > 0 ? 'amt-out' : ''}>{money(pendingDisb)}</strong>
           </div>
-          <TxnTable rows={disb} onDelete={(r) => del('loan_disbursements', r)} empty="Nothing given yet." />
+          <TxnTable rows={disb} onDelete={(r) => del('loan_disbursements', r)} onUndoCut={undoCut} empty="Nothing given yet." />
         </Card>
       </div>
 
@@ -679,7 +745,11 @@ The old dues cut from this loan (${money(sum(duesCut, 'amount'))}) will be added
                     <td>{r.kind === 'paid' ? modeLabel(r.mode) : '—'}</td>
                     <td className="muted">{r.note || ''}</td>
                     <td className="num">
-                      <button className="icon-btn danger" title="Delete" onClick={() => del('loan_penalty_entries', r)}>🗑</button>
+                      {r.cut_disb_id ? (
+                        <Link className="muted small" to={`/loans/${r.cut?.loan_id}`} title="Cut from another loan — undo it on that loan">🔒 that loan</Link>
+                      ) : (
+                        <button className="icon-btn danger" title="Delete" onClick={() => del('loan_penalty_entries', r)}>🗑</button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -780,7 +850,8 @@ The old dues cut from this loan (${money(sum(duesCut, 'amount'))}) will be added
           onClose={() => setModal(null)}
         />
       )}
-      {modal === 'old-pay' && <DefaulterPayModal loan={l} onClose={() => setModal(null)} />}
+      {modal === 'dues-cut' && <DuesCutModal loan={l} pending={pendingDisb} onClose={() => setModal(null)} />}
+      {modal === 'old-pay' &&<DefaulterPayModal loan={l} onClose={() => setModal(null)} />}
       {modal === 'old-edit' && <OldDefaulterModal loan={l} onClose={() => setModal(null)} />}
       {modal === 'pen-opening' && (
         <PenaltyOpeningModal loan={l} current={data.penaltyOpening} onClose={() => setModal(null)} />
