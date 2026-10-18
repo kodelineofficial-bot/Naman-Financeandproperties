@@ -151,6 +151,57 @@ function PenaltyModal({ kind, loanId, due, borrower, onClose }) {
 }
 
 /**
+ * Edit penalty (migration 025): type what the penalty due should be. Lower → a waiver for the
+ * difference, higher → an 'added' entry for the difference. Neither is money.
+ */
+function PenaltyEditModal({ loanId, due, borrower, onClose }) {
+  const toast = useToast();
+  const [busy, run] = useAction(toast);
+  const [f, setF] = useState({ amount: String(due), note: '' });
+  const target = round2(f.amount);
+  const diff = round2(target - due);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (f.amount === '' || target < 0) return toast.error('Enter the penalty amount (0 or more).');
+    if (Math.abs(diff) < 0.005) return onClose();
+    const ok = await run(
+      () =>
+        q(
+          supabase.from('loan_penalty_entries').insert({
+            loan_id: loanId, kind: diff > 0 ? 'added' : 'waived', paid_on: todayStr(), amount: Math.abs(diff),
+            mode: diff > 0 ? 'adjustment' : 'waiver', note: f.note.trim() || 'Edited by hand',
+          }),
+        ),
+      `Penalty set to ${money(target)}`,
+    );
+    if (ok) onClose();
+  }
+
+  return (
+    <Modal title={`Edit penalty · पेनल्टी बदलें — ${borrower}`} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="form-grid">
+          <Field label="Penalty due (₹) · बकाया पेनल्टी" hint={`Now: ${money(due)} · 0 = no penalty`}>
+            <input className="input-big" type="number" inputMode="decimal" min="0" step="any" autoFocus value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} />
+          </Field>
+          <Field label="Note"><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="Reason (optional)" /></Field>
+        </div>
+        {f.amount !== '' && Math.abs(diff) >= 0.005 && (
+          <p className="muted small">
+            {diff > 0 ? `${money(diff)} will be added to the penalty.` : `${money(-diff)} will be waived (माफ़).`} Not cash. New days behind are still added on top.
+          </p>
+        )}
+        <div className="form-actions">
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/**
  * Penalty up to a date, typed by hand (migration 015): for a loan that was behind before the
  * Settings "count from" date. The amount is added as it is; from the next day the system counts.
  */
@@ -326,6 +377,7 @@ export default function LoanDetail() {
   const pendingDisb = toNum(l.pending_disbursement);
   const outstanding = toNum(l.outstanding);
   const penaltyDue = toNum(l.penalty_due);
+  const penaltyAdded = l.penalty_off ? 0 : penalties.filter((r) => r.kind === 'added').reduce((s, r) => s + toNum(r.amount), 0);
   // A penalty amount typed on the loan itself applies even when the Settings switch is off.
   const ownPenalty = data.ownPenaltyRate != null;
   const penaltyOn = settings?.penalty_enabled || (ownPenalty && toNum(data.ownPenaltyRate) > 0);
@@ -586,6 +638,7 @@ The old dues cut from this loan (${money(sum(duesCut, 'amount'))}) will be added
           <>
             <button className="btn btn-primary btn-sm" disabled={penaltyDue <= 0} onClick={() => setModal('pen-paid')}>₹ Take penalty</button>
             <button className="btn btn-sm" disabled={penaltyDue <= 0} onClick={() => setModal('pen-waived')}>Waive · माफ़</button>
+            <button className="btn btn-sm" disabled={l.penalty_off} onClick={() => setModal('pen-edit')}>✎ Edit penalty</button>
             <button className="btn btn-sm" disabled={busy} onClick={togglePenaltyOff}>
               {l.penalty_off ? 'Turn penalty on' : 'No penalty for this loan'}
             </button>
@@ -604,7 +657,9 @@ The old dues cut from this loan (${money(sum(duesCut, 'amount'))}) will be added
           {data.penaltyOpening.date && !l.penalty_off && (
             <>Set by hand: <strong>{money(data.penaltyOpening.amount)}</strong> up to {fmtDateLong(data.penaltyOpening.date)}, counted from the next day · </>
           )}
-          Penalty days <strong>{toNum(l.penalty_days)}</strong> = <strong>{money(l.penalty_charged)}</strong>
+          Penalty days <strong>{toNum(l.penalty_days)}</strong>
+          {penaltyAdded > 0 && <> + added by hand <strong>{money(penaltyAdded)}</strong></>}
+          {' '}= <strong>{money(l.penalty_charged)}</strong>
           {' '}· Received <strong>{money(l.penalty_paid)}</strong>
           {toNum(l.penalty_waived) > 0 && <> · Waived <strong>{money(l.penalty_waived)}</strong></>}
           {' '}· Due <strong className={penaltyDue > 0 ? 'amt-out' : ''}>{money(penaltyDue)}</strong>
@@ -619,7 +674,7 @@ The old dues cut from this loan (${money(sum(duesCut, 'amount'))}) will be added
                 {penalties.map((r) => (
                   <tr key={r.id}>
                     <td className="nowrap">{fmtDate(r.paid_on)}</td>
-                    <td>{r.kind === 'paid' ? 'Received' : 'Waived (माफ़)'}</td>
+                    <td>{r.kind === 'paid' ? 'Received' : r.kind === 'added' ? 'Added by hand' : 'Waived (माफ़)'}</td>
                     <td className="num"><strong>{money(r.amount)}</strong></td>
                     <td>{r.kind === 'paid' ? modeLabel(r.mode) : '—'}</td>
                     <td className="muted">{r.note || ''}</td>
@@ -729,6 +784,9 @@ The old dues cut from this loan (${money(sum(duesCut, 'amount'))}) will be added
       {modal === 'old-edit' && <OldDefaulterModal loan={l} onClose={() => setModal(null)} />}
       {modal === 'pen-opening' && (
         <PenaltyOpeningModal loan={l} current={data.penaltyOpening} onClose={() => setModal(null)} />
+      )}
+      {modal === 'pen-edit' && (
+        <PenaltyEditModal loanId={id} due={penaltyDue} borrower={l.borrower_name} onClose={() => setModal(null)} />
       )}
       {(modal === 'pen-paid' || modal === 'pen-waived') && (
         <PenaltyModal

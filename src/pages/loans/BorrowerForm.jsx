@@ -17,7 +17,7 @@ export function cleanBorrower(f) {
 }
 
 /** Fields only — reused inside the New Loan form. */
-export function BorrowerFields({ value, onChange, compact }) {
+export function BorrowerFields({ value, onChange }) {
   const set = (k) => (e) => onChange({ ...value, [k]: e.target.value });
   return (
     <div className="form-grid">
@@ -25,15 +25,11 @@ export function BorrowerFields({ value, onChange, compact }) {
       <Field label="Phone"><input type="tel" value={value.phone} onChange={set('phone')} /></Field>
       <Field label="Work / Occupation (काम)"><input value={value.occupation} onChange={set('occupation')} placeholder="e.g. Shop owner, Driver" /></Field>
       <Field label="Address"><input value={value.address} onChange={set('address')} /></Field>
+      <Field label="Alternate phone"><input type="tel" value={value.alt_phone} onChange={set('alt_phone')} /></Field>
+      <Field label="ID proof (Aadhaar / PAN)"><input value={value.id_proof} onChange={set('id_proof')} /></Field>
       <Field label="Guarantor name (ज़मानती)"><input value={value.guarantor_name} onChange={set('guarantor_name')} /></Field>
       <Field label="Guarantor phone"><input type="tel" value={value.guarantor_phone} onChange={set('guarantor_phone')} /></Field>
-      {!compact && (
-        <>
-          <Field label="Alternate phone"><input type="tel" value={value.alt_phone} onChange={set('alt_phone')} /></Field>
-          <Field label="ID proof (Aadhaar / PAN)"><input value={value.id_proof} onChange={set('id_proof')} /></Field>
-          <Field label="Notes" span={2}><textarea rows={2} value={value.notes} onChange={set('notes')} /></Field>
-        </>
-      )}
+      <Field label="Notes" span={2}><textarea rows={2} value={value.notes} onChange={set('notes')} /></Field>
     </div>
   );
 }

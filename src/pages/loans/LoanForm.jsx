@@ -469,7 +469,7 @@ export default function LoanForm() {
                   })}
                 </>
               ) : (
-                <BorrowerFields value={newBorrower} onChange={setNewBorrower} compact />
+                <BorrowerFields value={newBorrower} onChange={setNewBorrower} />
               )}
             </Card>
           ) : (
