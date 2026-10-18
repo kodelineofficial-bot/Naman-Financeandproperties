@@ -8,6 +8,7 @@ import { freqOf } from '../../lib/loanMath.js';
 import { useAction, useLoad } from '../../lib/hooks.js';
 import { q, supabase } from '../../lib/supabase.js';
 import BorrowerForm from './BorrowerForm.jsx';
+import BorrowerPayModal from './BorrowerPay.jsx';
 
 export default function BorrowerDetail() {
   const { id } = useParams();
@@ -15,6 +16,7 @@ export default function BorrowerDetail() {
   const toast = useToast();
   const [busy, run] = useAction(toast);
   const [editing, setEditing] = useState(false);
+  const [paying, setPaying] = useState(false);
 
   const { data, loading, error } = useLoad(async () => {
     const [b, loans] = await Promise.all([
@@ -40,6 +42,9 @@ export default function BorrowerDetail() {
   return (
     <>
       <PageHeader title={b.name} hindi="ग्राहक" subtitle={[b.occupation, b.phone, b.address].filter(Boolean).join(' · ')}>
+        {open.length > 0 && (
+          <button className="btn btn-primary btn-lg" onClick={() => setPaying(true)}>₹ Take payment · पैसे लिए</button>
+        )}
         {wa && <a className="btn btn-wa" href={wa} target="_blank" rel="noreferrer">WhatsApp</a>}
         {b.phone && <a className="btn" href={`tel:${b.phone}`}>Call</a>}
         <button className="btn" onClick={() => setEditing(true)}>Edit</button>
@@ -106,6 +111,7 @@ export default function BorrowerDetail() {
         </Card>
       </div>
       {editing && <BorrowerForm borrower={b} onClose={() => setEditing(false)} />}
+      {paying && <BorrowerPayModal borrower={b} loans={[...open].sort((x, y) => x.loan_no - y.loan_no)} onClose={() => setPaying(false)} />}
     </>
   );
 }
