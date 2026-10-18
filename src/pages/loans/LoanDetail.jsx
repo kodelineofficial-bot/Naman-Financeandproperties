@@ -431,7 +431,7 @@ function PenaltyOpeningModal({ loan, current, onClose }) {
   );
 }
 
-function TxnTable({ rows, onDelete, onUndoCut, empty, daily, freq }) {
+function TxnTable({ rows, onDelete, onUndoCut, empty, daily, freq, loanId }) {
   if (!rows.length) return <Empty>{empty}</Empty>;
   return (
     <div className="table-wrap">
@@ -447,13 +447,21 @@ function TxnTable({ rows, onDelete, onUndoCut, empty, daily, freq }) {
                 <strong>{money(r.amount)}</strong>
                 {daily > 0 && <div className="muted small">{periodsText(r.amount, daily, freq)}</div>}
               </td>
-              <td>{r.mode === 'advance' ? <span className="badge">Advance kept · {modeLabel(r.payment_mode)}</span> : modeLabel(r.mode)}</td>
+              <td>
+                {r.mode === 'advance' ? <span className="badge">Advance kept · {modeLabel(r.payment_mode)}</span>
+                  : r.mode === 'renewal' && loanId && (r.cut_from === loanId || r.adjusted_into === loanId) ? <span className="badge">Advance kept from payout</span>
+                  : modeLabel(r.mode)}
+              </td>
               <td className="muted">{r.note || ''}</td>
               <td className="num">
                 {r.mode === 'advance' ? (
                   <span className="muted small" title="Kept at loan time — change it from Edit terms">🔒</span>
                 ) : r.mode === 'renewal' ? (
-                  r.cut_from && onUndoCut ? (
+                  r.cut_from && r.cut_from === loanId && onUndoCut ? (
+                    <button className="btn btn-sm" title="Undo — the advance is taken off and the money still to give goes up" onClick={() => onUndoCut(r)}>↩ Undo</button>
+                  ) : r.adjusted_into && r.adjusted_into === loanId ? (
+                    <span className="muted small" title="Kept from a payout — undo it under Money given">🔒</span>
+                  ) : r.cut_from && onUndoCut ? (
                     <span className="nowrap">
                       <Link className="muted small" to={`/loans/${r.cut_from}`} title="The loan whose dues were cut">loan ↗</Link>{' '}
                       <button className="btn btn-sm" title="Undo this cut — the dues go back on that loan" onClick={() => onUndoCut(r)}>↩ Undo</button>
@@ -513,7 +521,9 @@ export default function LoanDetail() {
   const { loan: l, disb, reps, renewedFrom, renewedInto, penalties } = data;
   const renewAdjusted = sum(reps.filter((r) => r.mode === 'renewal' && !r.adjusted_into), 'amount');
   // Dues of other loans (own or another borrower's) cut from this loan's cash; those loans kept running (migrations 016, 027).
-  const duesCut = disb.filter((x) => x.mode === 'renewal' && (x.cut_from || !renewedFrom));
+  const duesCut = disb.filter((x) => x.mode === 'renewal' && x.cut_from !== id && (x.cut_from || !renewedFrom));
+  // Advance kept from a later payout (migration 028).
+  const payoutAdvance = sum(disb.filter((x) => x.mode === 'renewal' && x.cut_from === id), 'amount');
   // This loan's own dues cut into someone's loan: deleting this loan takes them out of that loan too.
   const cutElsewhere = reps.filter((r) => r.cut_disb_id).length + penalties.filter((r) => r.cut_disb_id).length;
   const isRunning = l.status === 'active' || l.status === 'defaulted';
@@ -564,7 +574,10 @@ export default function LoanDetail() {
   }
 
   async function undoCut(row) {
-    if (!window.confirm(`Undo the ${money(row.amount)} cut "${row.note}"?\n\nThe dues go back on that loan and this loan's money still to give goes up by ${money(row.amount)}.`)) return;
+    const own = row.cut_from === id;
+    if (!window.confirm(own
+      ? `Undo "${row.note}"?\n\nThe ${money(row.amount)} advance is taken off this loan and the money still to give goes up by ${money(row.amount)}.`
+      : `Undo the ${money(row.amount)} cut "${row.note}"?\n\nThe dues go back on that loan and this loan's money still to give goes up by ${money(row.amount)}.`)) return;
     await run(() => q(supabase.from('loan_disbursements').delete().eq('id', row.id)), 'Cut undone');
   }
 
@@ -789,9 +802,10 @@ This loan's dues were paid from another loan's cash — that cut is removed too 
           flush
         >
           <div className="card-sub muted small">
-            Cash collected: <strong>{money(l.collected_cash)}</strong> · Advance: <strong>{money(l.advance_amount)}</strong>
+            Cash collected: <strong>{money(round2(toNum(l.collected_cash) - payoutAdvance))}</strong> · Advance: <strong>{money(l.advance_amount)}</strong>
+            {payoutAdvance > 0 && <> + kept from payouts <strong>{money(payoutAdvance)}</strong></>}
           </div>
-          <TxnTable rows={repRows} daily={old ? 0 : inst} freq={l.frequency} onDelete={(r) => del('loan_repayments', r)} empty="No collections yet." />
+          <TxnTable rows={repRows} loanId={id} daily={old ? 0 : inst} freq={l.frequency} onDelete={(r) => del('loan_repayments', r)} empty="No collections yet." />
         </Card>
         <Card
           title={`Money given · दिया (${disb.length})`}
@@ -806,7 +820,7 @@ This loan's dues were paid from another loan's cash — that cut is removed too 
           <div className="card-sub muted small">
             Given: <strong>{money(sum(disb, 'amount'))}</strong> · Still to give: <strong className={pendingDisb > 0 ? 'amt-out' : ''}>{money(pendingDisb)}</strong>
           </div>
-          <TxnTable rows={disb} onDelete={(r) => del('loan_disbursements', r)} onUndoCut={undoCut} empty="Nothing given yet." />
+          <TxnTable rows={disb} loanId={id} onDelete={(r) => del('loan_disbursements', r)} onUndoCut={undoCut} empty="Nothing given yet." />
         </Card>
       </div>
 
@@ -954,12 +968,11 @@ This loan's dues were paid from another loan's cash — that cut is removed too 
         />
       )}
       {modal === 'disb' && (
-        <EntryModal
-          title={`Give money — ${l.borrower_name}`}
-          table="loan_disbursements"
-          loanId={id}
-          defaultAmount={pendingDisb > 0 ? pendingDisb : ''}
-          max={pendingDisb}
+        <GiveMoneyModal
+          loan={l}
+          pending={pendingDisb}
+          // Pre-filled advance: this loan's advance days, else the Settings default (1 month for monthly).
+          defaultDays={toNum(l.advance_days) || (monthly ? 1 : toNum(settings?.default_advance_days ?? 10))}
           onClose={() => setModal(null)}
         />
       )}
