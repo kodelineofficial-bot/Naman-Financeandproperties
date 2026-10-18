@@ -189,7 +189,8 @@ export default function DayBook() {
         <>
           <div className="stats">
             <Stat label="Opening cash · शुरुआती" value={money(opening)} />
-            <Stat label="Total in · आया" value={money(totalIn)} tone="green" hint={`${counted(ins).length} entries`} />
+            {/* Like the paper diary: total in = opening + today's money in. */}
+            <Stat label="Total in · आया" value={money(round2(opening + totalIn))} tone="green" hint={`Opening ${money(opening)} + today ${money(totalIn)} (${counted(ins).length} entries)`} />
             <Stat label="Total out · गया" value={money(totalOut)} tone="red" hint={`${counted(outs).length} entries`} />
             <Stat label="Closing cash · बाकी" value={money(closing)} tone="gold" />
           </div>
