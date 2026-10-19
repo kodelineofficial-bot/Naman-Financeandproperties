@@ -76,11 +76,15 @@ The latest Karan Office clarification is in `supabase/repairs/karan_office_230.s
 
 **Advance from a later payout (migration 028):** + Give money on the loan page can keep part of the money as advance installments (pre-filled days × installment, editable, can be switched off). ₹13,000 given with ₹1,800 kept → ₹11,200 handed over; the Day Book shows ₹13,000 loan given (₹1,800 of it adjusted, no cash) and ₹1,800 *Advance kept* income. Undo per advance on the loan page.
 
+**Cut from a deleted loan (migration 029):** an old overdue cut (made before 027) stays in the Day Book even if the old loan was later deleted: in and out on the new loan, same amount, no cash, noted *old loan deleted*. Total In / Total Out include it; cash in hand and loan balances do not change.
+
+**Cash count per day (migration 030):** Day Book → 🪙 *Count cash* saves the cash counted in the drawer at the start of that day. It becomes that day's opening and later days follow from it; earlier days keep their own opening and closing. The difference from the system's figure (closing of the day before) is shown on the Day Book, never hidden. Settings → starting cash is locked behind a checkbox because changing it re-counts every day from the cash start date.
+
 **Borrower Take payment (no migration):** the borrower page has ₹ Take payment for all running loans at once. Enter the money received (UPI, cash, change given back); Auto-fill puts it on overdue first, then extra days on every loan; UPI is used first, then cash, so each loan gets its own UPI / cash entries and the Day Book matches the phone and the drawer. Penalty per loan is saved as penalty income. Save works only when Received − On loans = ₹0.
 
 **Day Book:** Total in includes the opening cash, like the paper diary (closing = total in − total out).
 
-**Upgrading an existing installation:** apply any migrations not yet run, in number order, before deploying this frontend (020, 021 and 022 for the advance-mode changes; 023–028 after them). Migration 021 also includes the updated atomic Edit terms function. If 021 and the Karan repair are already applied, run 022 to add the matching cuts; no second data correction is necessary. General migrations do not guess or rewrite historical payouts; the separate Karan repair is narrowly checked.
+**Upgrading an existing installation:** apply any migrations not yet run, in number order, before deploying this frontend (020, 021 and 022 for the advance-mode changes; 023–030 after them). Migration 021 also includes the updated atomic Edit terms function. If 021 and the Karan repair are already applied, run 022 to add the matching cuts; no second data correction is necessary. General migrations do not guess or rewrite historical payouts; the separate Karan repair is narrowly checked.
 
 **Verification:** `npm test` covers term dependencies and calendar/payout regressions. `tests/loanEdits.sql` checks the save function against the real ledger and reports in an isolated database with all migrations applied; all fixtures roll back.
 `tests/advanceMode.sql` checks every Cash/UPI payout/advance combination, legacy mode fallback, mode edits, multiple payouts, renewals, and daily/monthly cashflow.
@@ -91,7 +95,7 @@ The latest Karan Office clarification is in `supabase/repairs/karan_office_230.s
 
 ### 1. Supabase
 1. Create a project at https://supabase.com and choose region **Mumbai (ap-south-1)**.
-2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql` through `028_advance_from_payout.sql`).
+2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql` through `030_cash_counts.sql`).
 3. *(Optional demo data)* Run `supabase/seed.sql`.
 4. **Authentication → Users → Add user**: enter the owner's email and password, and tick *Auto confirm*.
 5. Make that user an admin (SQL Editor):

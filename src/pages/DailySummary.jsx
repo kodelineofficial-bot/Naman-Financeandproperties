@@ -41,7 +41,8 @@ export default function DailySummary() {
     let guard = 0;
     while (d <= to && guard < 1000) {
       const r = map[d];
-      const open = bal;
+      // a cash count that morning is the day's opening (migration 030)
+      const open = r?.cash_counted != null ? toNum(r.cash_counted) : bal;
       if (r) bal = toNum(r.closing_balance);
       days.push({
         date: d,

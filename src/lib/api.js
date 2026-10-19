@@ -21,19 +21,32 @@ export async function getBalanceAsOf(date) {
   return toNum(s.opening_balance);
 }
 
-/** Cash in hand at the START of `date` (i.e. closing of the previous day with entries). */
+/**
+ * Cash in hand at the START of `date`: the cash counted that morning (migration 030),
+ * else the closing of the previous day with entries. `expected` is what the system
+ * worked out before the count, so a count never hides a difference.
+ */
+export async function getOpeningDetail(date) {
+  const [day, rows] = await Promise.all([
+    q(supabase.from('daily_cashflow').select('opening_balance,cash_counted,count_difference').eq('entry_date', date).maybeSingle()),
+    q(
+      supabase
+        .from('daily_cashflow')
+        .select('closing_balance')
+        .lt('entry_date', date)
+        .order('entry_date', { ascending: false })
+        .limit(1),
+    ),
+  ]);
+  const expected = rows.length ? toNum(rows[0].closing_balance) : toNum((await getSettings()).opening_balance);
+  if (day?.cash_counted != null) {
+    return { opening: toNum(day.cash_counted), expected, counted: toNum(day.cash_counted), difference: toNum(day.count_difference) };
+  }
+  return { opening: expected, expected, counted: null, difference: 0 };
+}
+
 export async function getOpeningOn(date) {
-  const rows = await q(
-    supabase
-      .from('daily_cashflow')
-      .select('closing_balance')
-      .lt('entry_date', date)
-      .order('entry_date', { ascending: false })
-      .limit(1),
-  );
-  if (rows.length) return toNum(rows[0].closing_balance);
-  const s = await getSettings();
-  return toNum(s.opening_balance);
+  return (await getOpeningDetail(date)).opening;
 }
 
 export async function getBorrowers() {

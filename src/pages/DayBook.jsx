@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useToast } from '../components/Toast.jsx';
 import { Amount, Card, Empty, ErrorBox, ExportButton, Loading, Modal, PageHeader, PrintButton, Stat } from '../components/ui.jsx';
-import { deleteLedgerEntry, getLedger, getOpeningOn } from '../lib/api.js';
+import { deleteLedgerEntry, getLedger, getOpeningDetail } from '../lib/api.js';
 import { LEDGER_KINDS, addDays, counted, fmtDateFull, isUpi, modeLabel, money, round2, sum, toNum, todayStr } from '../lib/format.js';
 import { useAction, useLoad } from '../lib/hooks.js';
 import { displayedLedgerAmount, loanMoneyOnDate } from '../lib/ledgerAmounts.js';
@@ -107,6 +107,64 @@ function UpiSide({ title, rows, total, dir }) {
   );
 }
 
+/**
+ * Cash counted in the drawer at the start of one day (migration 030). It becomes that day's
+ * opening; days before it keep their own opening and closing.
+ */
+function CashCountForm({ date, detail, onClose }) {
+  const toast = useToast();
+  const [busy, run] = useAction(toast);
+  const [amount, setAmount] = useState(detail.counted != null ? String(detail.counted) : '');
+  const [note, setNote] = useState('');
+  const diff = amount === '' ? 0 : round2(toNum(amount) - detail.expected);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (amount === '' || toNum(amount) < 0) return toast.error('Enter the cash counted.');
+    const ok = await run(
+      () => q(supabase.from('cash_counts').upsert({
+        count_date: date, amount: round2(amount), note: note.trim() || null, updated_at: new Date().toISOString(),
+      })),
+      'Cash count saved',
+    );
+    if (ok) onClose();
+  }
+
+  async function remove() {
+    if (!window.confirm(`Remove the cash count of ${fmtDateFull(date)}? The opening goes back to ${money(detail.expected)}.`)) return;
+    const ok = await run(() => q(supabase.from('cash_counts').delete().eq('count_date', date)), 'Cash count removed');
+    if (ok) onClose();
+  }
+
+  return (
+    <Modal title={`Count cash · कैश गिनती — ${fmtDateFull(date)}`} onClose={onClose}>
+      <form onSubmit={submit}>
+        <p className="muted small">
+          Cash in the drawer at the start of this day, before any entry. It becomes this day's opening and the days after
+          follow from it. Earlier days do not change.
+        </p>
+        <div className="form-grid">
+          <Field label="Cash counted (₹)" hint={`System says ${money(detail.expected)} (closing of the day before)`}>
+            <input type="number" min="0" step="any" required autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </Field>
+          <Field label="Note"><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why it differs, if it does" /></Field>
+        </div>
+        {amount !== '' && diff !== 0 && (
+          <div className="note-box small">
+            Difference: <strong className={diff < 0 ? 'amt-out' : 'amt-in'}>{diff > 0 ? '+' : ''}{money(diff)}</strong>{' '}
+            ({diff < 0 ? 'less' : 'more'} cash than the system). It stays visible on this day.
+          </div>
+        )}
+        <div className="form-actions">
+          {detail.counted != null && <button type="button" className="btn btn-danger-outline" disabled={busy} onClick={remove}>Remove count</button>}
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 /** Day Book (रोज़नामचा): full detail of one day — opening, every in/out, closing, who didn't pay. */
 export default function DayBook() {
   const toast = useToast();
@@ -114,10 +172,11 @@ export default function DayBook() {
   const [params, setParams] = useSearchParams();
   const date = params.get('date') || todayStr();
   const setDate = (d) => setParams({ date: d }, { replace: true });
+  const [counting, setCounting] = useState(false);
 
   const { data, loading, error } = useLoad(async () => {
-    const [opening, entries, newLoans, sheet] = await Promise.all([
-      getOpeningOn(date),
+    const [openingDetail, entries, newLoans, sheet] = await Promise.all([
+      getOpeningDetail(date),
       getLedger(date, date),
       q(
         supabase
@@ -135,7 +194,10 @@ export default function DayBook() {
       (l) => toNum(l.paid_on_date) === 0 && toNum(l.balance_upto) > 0 &&
         (l.frequency === 'monthly' ? toNum(l.short_upto) > 0 : !l.paid_till || l.paid_till < date),
     );
-    return { opening, entries, newLoans: newLoans.map((l) => ({ ...l, ...loanMoneyOnDate(entries, l.id) })), missed };
+    return {
+      opening: openingDetail.opening, openingDetail, entries,
+      newLoans: newLoans.map((l) => ({ ...l, ...loanMoneyOnDate(entries, l.id) })), missed,
+    };
   }, [date]);
 
   async function onDelete(r) {
@@ -180,7 +242,9 @@ export default function DayBook() {
           ]}
         />
         <PrintButton />
+        {data && <button className="btn btn-sm" onClick={() => setCounting(true)}>🪙 Count cash</button>}
       </PageHeader>
+      {counting && data && <CashCountForm date={date} detail={data.openingDetail} onClose={() => setCounting(false)} />}
       <ErrorBox error={error} />
 
       {!data ? (
@@ -188,7 +252,14 @@ export default function DayBook() {
       ) : (
         <>
           <div className="stats">
-            <Stat label="Opening cash · शुरुआती" value={money(opening)} />
+            <Stat
+              label={data.openingDetail.counted != null ? 'Opening cash · गिना हुआ' : 'Opening cash · शुरुआती'}
+              value={money(opening)}
+              hint={data.openingDetail.counted != null
+                ? `Counted. System said ${money(data.openingDetail.expected)}`
+                  + (data.openingDetail.difference ? ` · difference ${data.openingDetail.difference > 0 ? '+' : ''}${money(data.openingDetail.difference)}` : ' · no difference')
+                : undefined}
+            />
             {/* Like the paper diary: total in = opening + today's money in. */}
             <Stat label="Total in · आया" value={money(round2(opening + totalIn))} tone="green" hint={`Opening ${money(opening)} + today ${money(totalIn)} (${counted(ins).length} entries)`} />
             <Stat label="Total out · गया" value={money(totalOut)} tone="red" hint={`${counted(outs).length} entries`} />

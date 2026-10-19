@@ -16,6 +16,8 @@ export default function Settings() {
   const [busy, run] = useAction(toast);
   const [f, setF] = useState(null);
   const [pw, setPw] = useState({ a: '', b: '' });
+  // Starting cash re-counts every day from the cash start date, so it is locked by default.
+  const [unlockCash, setUnlockCash] = useState(false);
 
   useEffect(() => {
     if (settings && !f) {
@@ -110,12 +112,19 @@ export default function Settings() {
               <Field label="Phone"><input value={f.phone} onChange={set('phone')} /></Field>
               <Field label="Address"><input value={f.address} onChange={set('address')} /></Field>
               <Field label="Cash start date · कैश शुरू तारीख" hint="Cash in hand is counted from this day. Older entries still show and still count for loans.">
-                <input type="date" value={f.cash_start_date} max={todayStr()} onChange={set('cash_start_date')} />
+                <input type="date" value={f.cash_start_date} max={todayStr()} disabled={!unlockCash} onChange={set('cash_start_date')} />
               </Field>
               <Field label="Opening cash balance (₹)" hint="Cash in hand at the start of the cash start date">
-                <input type="number" step="any" value={f.opening_balance} onChange={set('opening_balance')} />
+                <input type="number" step="any" value={f.opening_balance} disabled={!unlockCash} onChange={set('opening_balance')} />
               </Field>
             </div>
+            <p className="muted small">
+              To correct one day's opening cash, use <Link to="/daybook">Day Book → 🪙 Count cash</Link> on that day — earlier days stay as they are.
+            </p>
+            <label className="check small">
+              <input type="checkbox" checked={unlockCash} onChange={(e) => setUnlockCash(e.target.checked)} />
+              Change starting cash — this changes the opening and closing of every day from the cash start date
+            </label>
           </Card>
 
           <Card title="Default loan terms (pre-filled, editable per loan)">
