@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, Empty, ErrorBox, Loading, PageHeader, PrintButton, Stat } from '../../components/ui.jsx';
+import { useSettings } from '../../context/SettingsContext.jsx';
 import { addMonths, downloadCSV, fmtMonth, money, monthStart, sum, toNum, todayStr } from '../../lib/format.js';
 import { useLoad } from '../../lib/hooks.js';
 import { q, supabase } from '../../lib/supabase.js';
@@ -10,6 +11,8 @@ import { SalaryPayForm } from './EmployeeForms.jsx';
 export default function SalaryReport() {
   const [month, setMonth] = useState(monthStart(todayStr()));
   const [paying, setPaying] = useState(null);
+  const { settings } = useSettings();
+  const freeDays = toNum(settings?.free_absent_days ?? 3);
 
   const { data, loading, error } = useLoad(() => q(supabase.rpc('salary_report', { p_month: month })), [month]);
   const rows = data || [];
@@ -17,7 +20,7 @@ export default function SalaryReport() {
 
   return (
     <>
-      <PageHeader title="Salary Report" hindi="तनख्वाह रिपोर्ट" subtitle={`${fmtMonth(month)} — salary minus absent days minus advances minus already paid`}>
+      <PageHeader title="Salary Report" hindi="तनख्वाह रिपोर्ट" subtitle={`${fmtMonth(month)} — salary minus absent days (first ${freeDays} free, cut from day ${Math.floor(freeDays) + 1}) minus advances minus already paid`}>
         <div className="date-nav">
           <button className="btn btn-sm" onClick={() => setMonth(addMonths(month, -1))}>‹</button>
           <input type="month" value={month.slice(0, 7)} onChange={(e) => e.target.value && setMonth(`${e.target.value}-01`)} />

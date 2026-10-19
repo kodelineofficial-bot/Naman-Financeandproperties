@@ -28,6 +28,7 @@ export default function EmployeeDetail() {
   const [calMonth, setCalMonth] = useState(thisMonth);
   const { settings } = useSettings();
   const cutOn = settings?.attendance_cuts_salary ?? true;
+  const freeDays = toNum(settings?.free_absent_days ?? 3);
 
   const { data, loading, error } = useLoad(async () => {
     const [emp, advances, payments, attendance] = await Promise.all([
@@ -58,9 +59,10 @@ export default function EmployeeDetail() {
     const salary = toNum(emp.monthly_salary);
     const c = attCount(m);
     const ndays = Number(monthEnd(m).slice(8));
-    // Same rule as the salary report: per day × (absent + ½ half days).
+    // Same rule as the salary report: per day × (absent + ½ half days − free days), so with
+    // 3 free days the cut starts from the 4th absent day.
     // Per day = the employee's own cut if set, else salary ÷ days in month (when the setting is on).
-    const daysCut = c.absent + 0.5 * c.half;
+    const daysCut = Math.max(0, c.absent + 0.5 * c.half - freeDays);
     const cut = emp.leave_cut_per_day != null
       ? Math.round(toNum(emp.leave_cut_per_day) * daysCut)
       : cutOn ? Math.round((salary / ndays) * daysCut) : 0;

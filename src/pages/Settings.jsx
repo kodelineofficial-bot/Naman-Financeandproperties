@@ -33,6 +33,7 @@ export default function Settings() {
         default_daily_per_10k: String(settings.default_daily_per_10k ?? 150),
         default_advance_days: String(settings.default_advance_days ?? 10),
         attendance_cuts_salary: settings.attendance_cuts_salary ?? true,
+        free_absent_days: String(settings.free_absent_days ?? 3),
         penalty_enabled: !!settings.penalty_enabled,
         penalty_per_day: String(settings.penalty_per_day ?? 0),
         // shown as the day the penalty starts: grace 0 = day 2, grace 1 = day 3, …
@@ -76,6 +77,7 @@ export default function Settings() {
               default_daily_per_10k: toNum(f.default_daily_per_10k),
               default_advance_days: Math.max(0, Math.round(toNum(f.default_advance_days))),
               attendance_cuts_salary: !!f.attendance_cuts_salary,
+              free_absent_days: Math.max(0, Math.round(toNum(f.free_absent_days) * 2) / 2),
               penalty_enabled: !!f.penalty_enabled,
               penalty_per_day: Math.max(0, round2(f.penalty_per_day)),
               penalty_grace_days: Math.max(0, Math.round(toNum(f.penalty_start_day)) - 2),
@@ -151,8 +153,15 @@ export default function Settings() {
             />
             Cut salary for absent days · छुट्टी (गैरहाज़िर) के पैसे काटें
           </label>
+          <div className="form-grid" style={{ marginTop: 8 }}>
+            <Field label="Free absent days per month · माफ़ छुट्टी" hint={`Cut starts from day ${Math.floor(toNum(f.free_absent_days)) + 1}`}>
+              <input type="number" min="0" step="0.5" value={f.free_absent_days} onChange={set('free_absent_days')} />
+            </Field>
+          </div>
           <p className="muted small">
-            When on: 1 absent day = salary ÷ days in month (₹15,000 in a 30-day month = ₹500 per day). Half day = half of that.
+            The first {toNum(f.free_absent_days) || 0} absent days in a month are not cut (half day = ½ day); the cut starts after them.
+            With 3 free days: 3 absent = no cut, 5 absent = 2 days cut.
+            When on: 1 cut day = salary ÷ days in month (₹15,000 in a 30-day month = ₹500 per day). Half day = half of that.
             “Leave” (paid leave) and days not marked are not cut. An employee with their own “cut per extra leave day” is always cut that amount instead.
           </p>
         </Card>

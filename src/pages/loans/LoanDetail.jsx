@@ -63,9 +63,87 @@ function DuesCutModal({ loan, pending, onClose }) {
 }
 
 /**
+ * One of the borrower's other running loans in Give money: how much of this money goes on it
+ * (installments / overdue / advance days, and penalty).
+ */
+function OtherLoanCut({ loan: l, row, onChange }) {
+  const F = freqOf(l);
+  const inst = l.old_defaulter ? 0 : toNum(l.daily_installment);
+  const outstanding = round2(toNum(l.outstanding));
+  const penaltyDue = round2(toNum(l.penalty_due));
+  const quick = l.frequency === 'monthly' ? [1, 2, 3, 6] : [1, 2, 3, 7, 10, 15, 30];
+  const daysFor = (amount) => {
+    const n = inst > 0 ? toNum(amount) / inst : 0;
+    return n > 0 && Math.abs(n - Math.round(n)) < 1e-9 ? String(Math.round(n)) : '';
+  };
+  const amountFor = (days) => (toNum(days) > 0 ? String(round2(Math.min(toNum(days) * inst, outstanding))) : '');
+  const set = (patch) => onChange({ ...row, ...patch });
+  const setAmount = (a) => set({ amount: a, days: daysFor(a) });
+  const full = inst > 0 && toNum(row.amount) > 0 ? Math.floor((toNum(l.collected_total) + round2(row.amount)) / inst + 1e-9) : 0;
+
+  return (
+    <div className={`help-box ${row.on ? 'renew-box' : ''}`} style={{ marginTop: 10 }}>
+      <label className="check">
+        <input type="checkbox" checked={row.on} onChange={(e) => set({ on: e.target.checked })} />
+        <strong>Loan #{l.loan_no}</strong>
+        <span className="muted small">
+          {inst > 0 && <> · {money(inst)}{F.per}</>} · balance {money(outstanding)}
+          {toNum(l.overdue) > 0 ? <> · overdue <span className="amt-out">{money(l.overdue)}</span></> : ' · nothing overdue'}
+          {penaltyDue > 0 && <> · penalty <span className="amt-out">{money(penaltyDue)}</span></>}
+          {l.status === 'defaulted' && ' · defaulted'}
+        </span>
+      </label>
+      {row.on && (
+        <div className="form-grid three" style={{ marginTop: 8 }}>
+          <Field label="Cut for installments (₹) · किश्त" hint={inst > 0 ? periodsText(row.amount, inst, l.frequency) : `Max ${money(outstanding)}`}>
+            <input type="number" inputMode="decimal" min="0" step="any" placeholder="0" value={row.amount} onChange={(e) => setAmount(e.target.value)} />
+          </Field>
+          {inst > 0 && (
+            <Field label={`${F.units[0].toUpperCase()}${F.units.slice(1)} · कितने ${F.unitHi}`} hint={`× ${money(inst)} = amount`}>
+              <input type="number" inputMode="numeric" min="0" step="1" placeholder="0" value={row.days} onChange={(e) => set({ days: e.target.value, amount: amountFor(e.target.value) })} />
+            </Field>
+          )}
+          <Field label="Penalty cut (₹) · जुर्माना" hint={penaltyDue > 0 ? `Penalty due ${money(penaltyDue)}` : 'No penalty due'}>
+            <input type="number" inputMode="decimal" min="0" step="any" placeholder="0" value={row.penalty} onChange={(e) => set({ penalty: e.target.value })} disabled={penaltyDue <= 0 && !toNum(row.penalty)} />
+          </Field>
+          <div className="span-3 quick-days">
+            <div className="btn-row">
+              {inst > 0 && quick.map((n) => (
+                <button
+                  type="button" key={n}
+                  className={`btn btn-sm ${round2(row.amount) === round2(Math.min(n * inst, outstanding)) ? 'btn-primary' : ''}`}
+                  onClick={() => setAmount(amountFor(n))}
+                >
+                  {n} {n === 1 ? F.unit : F.units}
+                </button>
+              ))}
+              {toNum(l.overdue) > 0 && (
+                <button type="button" className="btn btn-sm" onClick={() => setAmount(String(round2(Math.min(toNum(l.overdue), outstanding))))}>
+                  Overdue {money(l.overdue)}
+                </button>
+              )}
+              {outstanding > 0 && (
+                <button type="button" className="btn btn-sm" onClick={() => setAmount(String(outstanding))}>Full balance {money(outstanding)}</button>
+              )}
+              {penaltyDue > 0 && (
+                <button type="button" className="btn btn-sm" onClick={() => set({ penalty: String(penaltyDue) })}>Full penalty {money(penaltyDue)}</button>
+              )}
+            </div>
+            {full >= 1 && (
+              <div className="good-note">Paid till · यहाँ तक जमा: <strong>{fmtDateLong(periodDate(l.frequency, l.collection_start_date, full))}</strong></div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * Give money (a part of the loan's cash), keeping some of it as advance installments if the
- * borrower asks (migration 028). Still to give ₹3,000, keep ₹1,000 advance → hand over ₹2,000;
- * Day Book: ₹3,000 loan given, ₹1,000 advance kept (income).
+ * borrower asks (migration 028), and/or cutting it for the same borrower's other running loans
+ * (migration 031). Still to give ₹3,000, keep ₹500 advance + ₹600 for loan #10 → hand over ₹1,900;
+ * Day Book: ₹3,000 loan given, ₹500 advance kept, ₹600 collection on #10.
  */
 function GiveMoneyModal({ loan, pending, defaultDays, onClose }) {
   const F = freqOf(loan);
@@ -85,13 +163,40 @@ function GiveMoneyModal({ loan, pending, defaultDays, onClose }) {
     paid_on: todayStr(), amount: startAmount, mode: 'cash', note: '',
     keep: canAdvance && defaultDays > 0, days: String(defaultDays || ''), advance: advanceFor(defaultDays, startAmount),
   });
+  // The borrower's other running loans: part of this money can be cut for them too.
+  const others = useLoad(
+    () => q(
+      supabase.from('loan_summary')
+        .select('id,loan_no,borrower_name,frequency,daily_installment,outstanding,overdue,penalty_due,collected_total,collection_start_date,old_defaulter,status')
+        .eq('borrower_id', loan.borrower_id)
+        .neq('id', loan.id)
+        .in('status', ['active', 'defaulted'])
+        .order('loan_no'),
+    ),
+    [loan.borrower_id, loan.id],
+  );
+  const otherLoans = (others.data || []).filter((l) => toNum(l.outstanding) > 0 || toNum(l.penalty_due) > 0);
+  const [cutRows, setCutRows] = useState({});
+  const rowOf = (id) => cutRows[id] || { on: false, amount: '', days: '', penalty: '' };
+  const cuts = otherLoans
+    .filter((l) => rowOf(l.id).on)
+    .map((l) => ({ loan: l, cut: round2(rowOf(l.id).amount), pen: round2(rowOf(l.id).penalty) }))
+    .filter((c) => c.cut !== 0 || c.pen !== 0);
+  const cutTotal = round2(cuts.reduce((t, c) => t + c.cut + c.pen, 0));
+
   const amount = round2(f.amount);
   const advance = f.keep ? round2(f.advance) : 0;
-  const cash = round2(amount - advance);
+  const cash = round2(amount - advance - cutTotal);
   const errors = [];
   if (advance < 0) errors.push('Advance cannot be negative.');
-  if (advance > amount + 0.001) errors.push(`Advance ${money(advance)} is more than the money given ${money(amount)}.`);
   if (advance > balance + 0.001) errors.push(`Advance ${money(advance)} is more than the loan balance ${money(balance)}.`);
+  for (const c of cuts) {
+    if (c.cut < 0 || c.pen < 0) errors.push(`Loan #${c.loan.loan_no}: cut cannot be negative.`);
+    if (c.cut > round2(toNum(c.loan.outstanding)) + 0.001) errors.push(`Loan #${c.loan.loan_no}: cut ${money(c.cut)} is more than its balance ${money(c.loan.outstanding)}.`);
+    if (c.pen > round2(toNum(c.loan.penalty_due)) + 0.001) errors.push(`Loan #${c.loan.loan_no}: penalty cut is more than its penalty due ${money(c.loan.penalty_due)}.`);
+  }
+  if (cutTotal > pending + 0.001) errors.push(`Cuts for other loans ${money(cutTotal)} are more than the money still to give ${money(pending)}.`);
+  if (cash < -0.001) errors.push(`Advance + cuts ${money(round2(advance + cutTotal))} are more than the money given ${money(amount)}.`);
   const paidTill = advance > 0 ? Math.floor((toNum(loan.collected_total) + advance) / inst + 1e-9) : 0;
 
   const setDays = (days) => {
@@ -106,23 +211,26 @@ function GiveMoneyModal({ loan, pending, defaultDays, onClose }) {
     if (f.paid_on > todayStr()) return toast.error('Date cannot be in the future · aage ki tareekh nahi');
     if (amount > pending + 0.001 && !window.confirm(`This is more than the remaining ${money(pending)}. Save anyway?`)) return;
     const ok = await run(
-      () => q(supabase.rpc('give_loan_money', {
+      () => q(supabase.rpc('give_loan_money_cuts', {
         p_loan: loan.id, p_date: f.paid_on, p_amount: amount, p_advance: advance, p_mode: f.mode, p_note: f.note.trim() || null,
+        p_cuts: cuts.map((c) => ({ loan: c.loan.id, amount: c.cut, penalty: c.pen })),
       })),
-      advance > 0 ? `${money(amount)} given · ${money(advance)} advance kept · ${money(cash)} handed over` : `${money(amount)} saved`,
+      advance > 0 || cutTotal > 0
+        ? `${money(amount)} given · ${[advance > 0 && `${money(advance)} advance kept`, cutTotal > 0 && `${money(cutTotal)} cut for other loans`].filter(Boolean).join(' · ')} · ${money(cash)} handed over`
+        : `${money(amount)} saved`,
     );
     if (ok) onClose();
   }
 
   return (
-    <Modal title={`Give money · पैसे देना — ${loan.borrower_name}`} onClose={onClose}>
+    <Modal title={`Give money · पैसे देना — ${loan.borrower_name}`} onClose={onClose} wide={otherLoans.length > 0}>
       <form onSubmit={submit}>
         <p className="muted small">Still to give on this loan: <strong>{money(pending)}</strong></p>
         <div className="form-grid">
           <Field label="Date">
             <input type="date" required max={todayStr()} value={f.paid_on} onChange={(e) => setF({ ...f, paid_on: e.target.value })} />
           </Field>
-          <Field label="Money given this time (₹) · इस बार की रकम" hint={f.keep && advance > 0 ? 'Before the advance is kept' : undefined}>
+          <Field label="Money given this time (₹) · इस बार की रकम" hint={advance > 0 || cutTotal > 0 ? 'Before the advance / cuts are kept' : undefined}>
             <input
               className="input-big" type="number" inputMode="decimal" min="0" step="any" required autoFocus value={f.amount}
               onChange={(e) => setF({ ...f, amount: e.target.value, ...(f.days !== '' && { advance: advanceFor(f.days, e.target.value) }) })}
@@ -153,13 +261,34 @@ function GiveMoneyModal({ loan, pending, defaultDays, onClose }) {
           <Field label="Mode"><ModeSelect value={f.mode} onChange={(v) => setF({ ...f, mode: v })} /></Field>
           <Field label="Note"><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></Field>
         </div>
-        {amount > 0 && advance > 0 && errors.length === 0 && (
+        <ErrorBox error={others.error} />
+        {otherLoans.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <strong>Cut for {loan.borrower_name}&apos;s other loans · दूसरे लोन में काटें</strong>
+            <p className="muted small" style={{ margin: '2px 0 0' }}>
+              Tick a loan and enter how much of this money goes on it. You can split it — e.g. half on one loan, half on another.
+            </p>
+            {otherLoans.map((l) => (
+              <OtherLoanCut key={l.id} loan={l} row={rowOf(l.id)} onChange={(r) => setCutRows((x) => ({ ...x, [l.id]: r }))} />
+            ))}
+          </div>
+        )}
+        {amount > 0 && (advance > 0 || cutTotal > 0) && errors.length === 0 && (
           <div className="good-note">
-            {money(amount)} − advance {money(advance)} = hand over <strong>{money(cash)}</strong> ({f.mode === 'upi' ? 'UPI' : modeLabel(f.mode)})
-            {paidTill >= 1 && <> · paid till · यहाँ तक जमा: <strong>{fmtDateLong(periodDate(loan.frequency, loan.collection_start_date, paidTill))}</strong></>}
+            {money(amount)}
+            {advance > 0 && <> − advance {money(advance)}</>}
+            {cuts.map((c) => <span key={c.loan.id}> − #{c.loan.loan_no} {money(round2(c.cut + c.pen))}</span>)}
+            {' '}= hand over <strong>{money(cash)}</strong> ({f.mode === 'upi' ? 'UPI' : modeLabel(f.mode)})
+            {paidTill >= 1 && <> · this loan paid till · यहाँ तक जमा: <strong>{fmtDateLong(periodDate(loan.frequency, loan.collection_start_date, paidTill))}</strong></>}
             <div className="muted small">
-              Day Book: {money(amount)} loan given ({money(cash)} handed over + {money(advance)} kept) and {money(advance)} advance kept as income.
-              Cash in hand moves only by {money(cash)}.
+              Day Book: {money(amount)} loan given ({money(cash)} handed over + {money(round2(advance + cutTotal))} kept, no cash)
+              {advance > 0 && <>, {money(advance)} advance kept as income</>}
+              {cuts.map((c) => (
+                <span key={c.loan.id}>
+                  , {money(c.cut)} collection on #{c.loan.loan_no}{c.pen > 0 ? ` + ${money(c.pen)} penalty income` : ''}
+                </span>
+              ))}
+              . Cash in hand moves only by {money(cash)}.
             </div>
           </div>
         )}
@@ -167,7 +296,7 @@ function GiveMoneyModal({ loan, pending, defaultDays, onClose }) {
         <div className="form-actions">
           <button type="button" className="btn" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" disabled={busy || errors.length > 0}>
-            {busy ? 'Saving…' : advance > 0 ? `Give · hand over ${money(cash)}` : 'Save'}
+            {busy ? 'Saving…' : advance > 0 || cutTotal > 0 ? `Give · hand over ${money(cash)}` : 'Save'}
           </button>
         </div>
       </form>
