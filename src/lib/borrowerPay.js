@@ -17,33 +17,35 @@ export function received({ upi, cash, change }) {
 }
 
 /**
- * Spread `money` over the loans: first each loan's overdue (missed days, up to today),
- * then one more installment at a time on every loan (extra days), never past a loan's
- * balance. `penaltyTaken` is already spoken for. Returns { [loanId]: amount }.
+ * Spread `money` over the loans one installment at a time on every loan: first the
+ * overdue (missed days, up to today), then extra days, never past a loan's balance.
+ * `penaltyTaken` is already spoken for. Returns { [loanId]: amount }.
  * loans: [{ id, overdue, inst, outstanding }] in the order to fill.
  */
 export function autoFill(loans, money) {
   let left = round2(money);
   const out = Object.fromEntries(loans.map((l) => [l.id, 0]));
   const room = (l) => round2(toNum(l.outstanding) - out[l.id]);
-  for (const l of loans) {
-    const put = round2(Math.max(0, Math.min(toNum(l.overdue), room(l), left)));
-    out[l.id] = round2(out[l.id] + put);
-    left = round2(left - put);
-  }
-  // Extra days, round by round so every loan moves forward together.
-  while (left > 0.001) {
-    let moved = false;
-    for (const l of loans) {
-      const put = round2(Math.max(0, Math.min(toNum(l.inst) || room(l), room(l), left)));
-      if (put <= 0) continue;
-      out[l.id] = round2(out[l.id] + put);
-      left = round2(left - put);
-      moved = true;
-      if (left <= 0.001) break;
+  // One installment per loan per round, so a short payment covers a day on every loan
+  // (₹250 on ₹150/day + ₹100/day → 150 + 100), not all of it on the first loan.
+  const rounds = (cap) => {
+    while (left > 0.001) {
+      let moved = false;
+      for (const l of loans) {
+        const step = toNum(l.inst) || room(l);
+        const put = round2(Math.max(0, Math.min(step, cap(l), room(l), left)));
+        if (put <= 0) continue;
+        out[l.id] = round2(out[l.id] + put);
+        left = round2(left - put);
+        moved = true;
+        if (left <= 0.001) break;
+      }
+      if (!moved) break;
     }
-    if (!moved) break;
-  }
+  };
+  // Overdue first (missed days), then extra days.
+  rounds((l) => round2(toNum(l.overdue) - out[l.id]));
+  rounds(() => Infinity);
   return out;
 }
 

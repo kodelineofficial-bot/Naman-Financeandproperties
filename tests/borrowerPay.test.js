@@ -35,6 +35,17 @@ test('nothing overdue: extra days go round every loan, never past a balance', ()
   assert.deepEqual(autoFill([{ id: 'X', inst: 240, overdue: 0, outstanding: 300 }], 1000), { X: 300 });
 });
 
+test('short payment covers a day on every loan, not all on the first (Aman Biryani)', () => {
+  const two = [
+    { id: 'A', inst: 150, overdue: 450, outstanding: 7650 },
+    { id: 'B', inst: 100, overdue: 300, outstanding: 4900 },
+  ];
+  assert.deepEqual(autoFill(two, 250), { A: 150, B: 100 });
+  assert.deepEqual(autoFill(two, 400), { A: 300, B: 100 });
+  assert.deepEqual(autoFill(two.map((l) => ({ ...l, overdue: 0 })), 250), { A: 150, B: 100 });
+  assert.deepEqual(autoFill([{ ...two[0], overdue: 0 }, two[1]], 250), { A: 0, B: 250 });
+});
+
 test('penalty is split by mode too', () => {
   const { entries } = splitModes([{ loanId: 'A', kind: 'installment', amount: 240 }, { loanId: 'A', kind: 'penalty', amount: 100 }], { upi: 300, cash: 40 });
   assert.deepEqual(entries.map((e) => [e.kind, e.mode, e.amount]), [['installment', 'upi', 240], ['penalty', 'upi', 60], ['penalty', 'cash', 40]]);
