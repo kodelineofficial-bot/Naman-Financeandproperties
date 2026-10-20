@@ -93,12 +93,16 @@ export default function LoanForm() {
   const old = oldLoan.data;
   const oldBalance = old ? round2(toNum(old.outstanding)) : 0;
   const [adjust, setAdjust] = useState('');
+  // On: renewed loan is closed, the uncut part is a discount. Off: cut only part, loan keeps running.
+  const [closeOld, setCloseOld] = useState(true);
+  const [oldPenalty, setOldPenalty] = useState('0');
   const [renewReady, setRenewReady] = useState(false);
   useEffect(() => {
     if (!old || renewReady) return;
     setBorrowerId(old.borrower_id);
     setBorrowerMode('existing');
     setAdjust(String(oldBalance));
+    setOldPenalty(String(round2(toNum(old.penalty_due))));
     // Same type as the old loan (daily / monthly); it can still be switched below.
     const fq = old.frequency || 'daily';
     setForm((f) => ({
@@ -109,15 +113,19 @@ export default function LoanForm() {
     }));
     setRenewReady(true);
   }, [old, renewReady, oldBalance]);
-  // A brand-new loan for someone who already has a running loan → offer renewal.
+  // The borrower's running loans: offer renewal, or cut their dues from this loan.
+  // On renewal: the borrower's other running loans (not the one being renewed).
+  const runningOf = renewId ? old?.borrower_id : borrowerMode === 'existing' && borrowerId;
   const running = useLoad(
     () =>
-      !isEdit && !renewId && borrowerMode === 'existing' && borrowerId
-        ? q(supabase.from('loan_summary').select('id,loan_no,borrower_name,principal,outstanding,overdue,penalty_due,daily_installment,frequency').eq('borrower_id', borrowerId).in('status', ['active', 'defaulted']).order('loan_no'))
+      !isEdit && runningOf
+        ? q(supabase.from('loan_summary').select('id,loan_no,borrower_name,principal,outstanding,overdue,penalty_due,daily_installment,frequency').eq('borrower_id', runningOf).in('status', ['active', 'defaulted']).order('loan_no'))
+          .then((rows) => rows.filter((r) => r.id !== renewId))
         : [],
-    [borrowerId, borrowerMode, renewId, isEdit],
+    [runningOf, renewId, isEdit],
   );
   const adjustAmt = renewId ? round2(adjust) : 0;
+  const oldPenAmt = renewId ? round2(oldPenalty) : 0;
   // Optional: cut old loans' overdue (+ penalty) from this loan's cash; those loans keep running (migrations 016, 027).
   const [cuts, setCuts] = useState({});
   const cutRows = (running.data || [])
@@ -140,11 +148,18 @@ export default function LoanForm() {
       return { ...c, [r.id]: { on, months: String(months), amount: String(monthsAmount(r, months)), penalty } };
     });
   }
+  // Cut the whole balance of that loan (it closes when fully paid).
+  function cutFull(r) {
+    setCuts((c) => ({
+      ...c,
+      [r.id]: { ...c[r.id], on: true, amount: String(round2(toNum(r.outstanding))), ...(r.frequency === 'monthly' && { months: String(monthsLeft(r)) }) },
+    }));
+  }
   function setCutMonths(r, value) {
     const months = value === '' ? '' : Math.max(0, Math.min(Math.floor(toNum(value)), monthsLeft(r)));
     setCuts((c) => ({ ...c, [r.id]: { ...c[r.id], months: String(months), amount: String(monthsAmount(r, toNum(months))) } }));
   }
-  const discount = renewId ? round2(Math.max(0, oldBalance - adjustAmt)) : 0;
+  const discount = renewId && closeOld ? round2(Math.max(0, oldBalance - adjustAmt)) : 0;
 
   // Apply defaults from Settings once (new loans only).
   useEffect(() => {
@@ -225,7 +240,7 @@ export default function LoanForm() {
     }));
     setOv((o) => ({ ...o, daily_installment: false, duration_days: false, advance_amount: false }));
   }
-  const cashToGive = round2(d.net - adjustAmt - cutTotal);
+  const cashToGive = round2(d.net - adjustAmt - oldPenAmt - cutTotal);
   const payoutEdits = originalLoan ? loanPayoutEdits(originalLoan, disbursements, d.net, syncPayout, payoutAmounts) : [];
   const adjustedPayout = disbursements.filter((r) => !isCashDisbursement(r)).reduce((total, r) => total + toNum(r.amount), 0);
   const recordedPayout = round2(adjustedPayout + payoutEdits.reduce((total, r) => total + r.amount, 0));
@@ -234,7 +249,9 @@ export default function LoanForm() {
     if (!['active', 'defaulted'].includes(old.status)) renewErrors.push(`Loan #${old.loan_no} is not running — cannot renew.`);
     if (adjustAmt < 0) renewErrors.push('Old balance to cut cannot be negative.');
     if (adjustAmt > oldBalance + 0.001) renewErrors.push(`Cannot cut more than the old balance ${money(oldBalance)}.`);
-    if (cashToGive < 0) renewErrors.push(`Old balance ${money(adjustAmt)} is more than this loan's cash ${money(d.net)} — make the new loan bigger.`);
+    if (oldPenAmt < 0) renewErrors.push(`Loan #${old.loan_no}: penalty cut cannot be negative.`);
+    if (oldPenAmt > round2(toNum(old.penalty_due)) + 0.001) renewErrors.push(`Loan #${old.loan_no}: penalty cut is more than its penalty due ${money(old.penalty_due)}.`);
+    if (cashToGive < 0 && cutTotal <= 0) renewErrors.push(`Old balance ${money(round2(adjustAmt + oldPenAmt))} is more than this loan's cash ${money(d.net)} — make the new loan bigger.`);
   }
   for (const r of cutRows) {
     if (r.cut < 0) renewErrors.push(`Loan #${r.loan_no}: cut cannot be negative.`);
@@ -243,7 +260,7 @@ export default function LoanForm() {
     if (r.pen > round2(toNum(r.penalty_due)) + 0.001) renewErrors.push(`Loan #${r.loan_no}: penalty cut is more than its penalty due ${money(r.penalty_due)}.`);
   }
   renewErrors.push(...duesCutErrors(otherRows));
-  if (cutTotal > 0 && cashToGive < 0) renewErrors.push(`Dues cut ${money(round2(adjustAmt + cutTotal))} are more than this loan's cash ${money(d.net)} — make the new loan bigger or cut less.`);
+  if (cutTotal > 0 && cashToGive < 0) renewErrors.push(`Dues cut ${money(round2(adjustAmt + oldPenAmt + cutTotal))} are more than this loan's cash ${money(d.net)} — make the new loan bigger or cut less.`);
   const payoutErrors = [];
   if (isEdit && payoutEdits.some((r) => r.amount <= 0)) payoutErrors.push('Each recorded payout must be more than 0. Remove an incorrect payout from the loan page.');
   if (isEdit && recordedPayout > d.net + 0.005) payoutErrors.push(`Recorded payouts exceed cash to give by ${money(recordedPayout - d.net)}. Correct the amount handed over below.`);
@@ -309,23 +326,24 @@ export default function LoanForm() {
         bId = b.id;
       }
       const loan = await q(supabase.from('loans').insert({ ...loanPayload, borrower_id: bId }).select('id').single());
-      if (renewId) {
+      const cutInto = (p_old, p_amount, p_penalty) =>
+        q(supabase.rpc('cut_dues_into_loan', { p_old, p_new: loan.id, p_amount, p_penalty, p_date: form.loan_date }));
+      if (renewId || cutTotal > 0) {
         try {
-          await q(supabase.rpc('renew_loan', { p_old: renewId, p_new: loan.id, p_adjust: adjustAmt, p_date: form.loan_date }));
-        } catch (e) {
-          // Do not leave a half-done renewal behind.
-          await q(supabase.from('loans').delete().eq('id', loan.id));
-          throw e;
-        }
-      }
-      if (cutTotal > 0) {
-        try {
-          for (const r of renewId ? [] : cutRows) {
-            if (r.cut + r.pen > 0) await q(supabase.rpc('cut_dues_into_loan', { p_old: r.id, p_new: loan.id, p_amount: r.cut, p_penalty: r.pen, p_date: form.loan_date }));
+          // Cuts first: they go away with the new loan (on delete cascade). The renewal last,
+          // because a failed save cannot undo it once the old loan is marked renewed.
+          for (const r of cutRows) {
+            if (r.cut + r.pen > 0) await cutInto(r.id, r.cut, r.pen);
           }
           await saveDuesCuts(loan.id, otherRows, form.loan_date);
+          if (renewId && closeOld) {
+            if (oldPenAmt > 0) await cutInto(renewId, 0, oldPenAmt);
+            await q(supabase.rpc('renew_loan', { p_old: renewId, p_new: loan.id, p_adjust: adjustAmt, p_date: form.loan_date }));
+          } else if (renewId && adjustAmt + oldPenAmt > 0) {
+            await cutInto(renewId, adjustAmt, oldPenAmt);
+          }
         } catch (e) {
-          // Deleting the new loan also removes any cut already made (on delete cascade).
+          // Do not leave a half-done renewal / cut behind.
           await q(supabase.from('loans').delete().eq('id', loan.id));
           throw e;
         }
@@ -338,10 +356,80 @@ export default function LoanForm() {
         );
       }
       return loan;
-    }, isEdit ? 'Loan updated' : renewId ? `Loan renewed · old loan #${old?.loan_no} closed`
+    }, isEdit ? 'Loan updated'
+      : renewId && closeOld ? `Loan renewed · old loan #${old?.loan_no} closed${cutTotal > 0 ? ` · ${money(cutTotal)} other loans cut` : ''}`
+      : renewId ? `Loan created · ${money(round2(adjustAmt + oldPenAmt + cutTotal))} cut · loan #${old?.loan_no} keeps running`
       : cutTotal > 0 ? `Loan created · ${money(cutTotal)} dues cut` : 'Loan created');
 
     if (res) navigate(`/loans/${res.id}`);
+  }
+
+  /** One of the borrower's running loans, with an optional cut of its dues from this new loan. */
+  function runningLoanBox(r, inRenew) {
+    const c = cuts[r.id];
+    const overdue = round2(toNum(r.overdue));
+    const monthly = r.frequency === 'monthly';
+    return (
+      <div key={r.id} className="help-box renew-box" style={{ marginTop: 12 }}>
+        {inRenew ? <>Also running: <strong>Loan #{r.loan_no}</strong></> : <>⚠ This borrower already has <strong>Loan #{r.loan_no}</strong></>}
+        {monthly && <> (monthly · {money(r.daily_installment)}/month)</>} ({money(r.principal)}) running with{' '}
+        <strong>{money(r.outstanding)}</strong> still to collect
+        {overdue > 0 ? <> · overdue (बकाया) <strong>{money(overdue)}</strong></> : ' · nothing overdue'}.
+        {toNum(r.outstanding) > 0 && (
+          <div style={{ marginTop: 8 }}>
+            <label className="check">
+              <input type="checkbox" checked={!!c?.on} onChange={(e) => toggleCut(r, e.target.checked)} />
+              {monthly
+                ? <>Cut monthly installment of loan #{r.loan_no} from this new loan (मासिक किस्त काटें)</>
+                : <>Cut old dues of loan #{r.loan_no} from this new loan (बकाया काटें)</>}
+            </label>
+            <button type="button" className="btn btn-sm" style={{ marginTop: 6 }} onClick={() => cutFull(r)}>Cut full balance {money(r.outstanding)} · पूरा काटें</button>
+            {c?.on && (
+              <div className="form-grid" style={{ marginTop: 8 }}>
+                {monthly ? (
+                  <>
+                    <Field
+                      label="Months to cut (कितने महीने)"
+                      hint={`${money(r.daily_installment)}/month · ${monthsLeft(r)} month${monthsLeft(r) === 1 ? '' : 's'} left on loan #${r.loan_no}`}
+                    >
+                      <div className="amount-cell">
+                        <button type="button" className="step-btn" onClick={() => setCutMonths(r, toNum(c.months) - 1)} aria-label="One month less">−</button>
+                        <input type="number" min="0" max={monthsLeft(r)} step="1" inputMode="numeric" value={c.months} onChange={(e) => setCutMonths(r, e.target.value)} />
+                        <button type="button" className="step-btn" onClick={() => setCutMonths(r, toNum(c.months) + 1)} aria-label="One month more">+</button>
+                      </div>
+                    </Field>
+                    <Field
+                      label="Amount to cut ₹ (auto)"
+                      hint={`${toNum(c.months) || 0} × ${money(r.daily_installment)}${toNum(c.amount) < toNum(c.months) * toNum(r.daily_installment) ? ` — capped at balance ${money(r.outstanding)}` : ''}. Loan #${r.loan_no} keeps running for the rest. Not cash — not in the cash book.`}
+                    >
+                      <input type="text" readOnly value={money(c.amount)} />
+                    </Field>
+                  </>
+                ) : (
+                  <Field
+                    label="Amount to cut ₹"
+                    hint={`Overdue ${money(overdue)} · max ${money(r.outstanding)}. Loan #${r.loan_no} keeps running for the rest (closes if fully cut). In the Day Book as collected and given (no cash moves).`}
+                  >
+                    <input type="number" min="0" step="any" value={c.amount} onChange={(e) => setCuts((x) => ({ ...x, [r.id]: { ...x[r.id], amount: e.target.value } }))} />
+                  </Field>
+                )}
+                {(toNum(r.penalty_due) > 0 || toNum(c.penalty) > 0) && (
+                  <Field label="Penalty to cut ₹ · जुर्माना" hint={`Penalty due ${money(r.penalty_due)} — counted as penalty income`}>
+                    <input type="number" min="0" step="any" value={c.penalty} onChange={(e) => setCuts((x) => ({ ...x, [r.id]: { ...x[r.id], penalty: e.target.value } }))} />
+                  </Field>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        {!inRenew && (
+          <div className="btn-row" style={{ marginTop: 8 }}>
+            <Link className="btn" to={`/loans/new?renew=${r.id}`}>🔁 Renew loan #{r.loan_no} (cut full balance, close it)</Link>
+            <span className="muted small">or continue below for a separate loan</span>
+          </div>
+        )}
+      </div>
+    );
   }
 
   if (loadError) return <ErrorBox error={loadError} />;
@@ -372,17 +460,43 @@ export default function LoanForm() {
                     <div><span>Paid till</span><strong>{old.paid_till ? fmtDateLong(old.paid_till) : 'nothing paid yet'}</strong></div>
                     <div className="kv-total"><span>Old balance still to collect (बाकी)</span><strong>{money(oldBalance)}</strong></div>
                   </div>
+                  <div className="segmented" style={{ marginTop: 12 }}>
+                    <button type="button" className={closeOld ? 'active' : ''} onClick={() => { setCloseOld(true); setAdjust(String(oldBalance)); }}>
+                      Close loan #{old.loan_no} · पूरा काटें
+                    </button>
+                    <button type="button" className={!closeOld ? 'active' : ''} onClick={() => { setCloseOld(false); setAdjust(String(round2(Math.min(toNum(old.overdue), oldBalance)))); }}>
+                      Cut a part · keep it running
+                    </button>
+                  </div>
                   <div className="form-grid" style={{ marginTop: 12 }}>
                     <Field
-                      label="Cut from new loan (पुराना बाकी काटें) ₹"
-                      hint={discount > 0 ? `Discount (छूट) given: ${money(discount)} — this part is forgiven` : 'Full old balance is cut. Lower it only if you want to give a discount (छूट).'}
+                      label={`Cut from new loan · loan #${old.loan_no} (पुराना बाकी काटें) ₹`}
+                      hint={!closeOld
+                        ? `Overdue ${money(old.overdue)} · max ${money(oldBalance)}. Loan #${old.loan_no} keeps running for the rest.`
+                        : discount > 0 ? `Discount (छूट) given: ${money(discount)} — this part is forgiven` : 'Full old balance is cut. Lower it only if you want to give a discount (छूट).'}
                     >
                       <input className="input-big" type="number" min="0" step="any" value={adjust} onChange={(e) => setAdjust(e.target.value)} />
                     </Field>
+                    {(toNum(old.penalty_due) > 0 || oldPenAmt > 0) && (
+                      <Field label="Penalty to cut ₹ · जुर्माना" hint={`Penalty due ${money(old.penalty_due)} — counted as penalty income`}>
+                        <input type="number" min="0" step="any" value={oldPenalty} onChange={(e) => setOldPenalty(e.target.value)} />
+                      </Field>
+                    )}
                   </div>
                   <p className="muted small">
-                    The old loan will be marked <strong>Renewed</strong> and closed. This cut is not cash — it does not go in the cash book.
+                    {closeOld
+                      ? <>The old loan will be marked <strong>Renewed</strong> and closed.</>
+                      : <>Loan #{old.loan_no} is not closed — only this part is paid from the new loan.</>}
+                    {' '}This cut is not cash — it does not go in the cash book.
                   </p>
+                  {(running.data || []).length > 0 && (
+                    <>
+                      <h4 style={{ marginTop: 16, marginBottom: 0 }}>Other running loans of {old.borrower_name} · बाकी लोन</h4>
+                      <p className="muted small" style={{ margin: 0 }}>Tick any loan to cut its installments from this new loan too — overdue, a part, or the full balance.</p>
+                      <ErrorBox error={running.error} />
+                      {running.data.map((r) => runningLoanBox(r, true))}
+                    </>
+                  )}
                 </>
               )}
             </Card>
@@ -418,69 +532,7 @@ export default function LoanForm() {
                       </button>
                     ))}
                   </div>
-                  {(running.data || []).map((r) => {
-                    const c = cuts[r.id];
-                    const overdue = round2(toNum(r.overdue));
-                    const monthly = r.frequency === 'monthly';
-                    return (
-                      <div key={r.id} className="help-box renew-box" style={{ marginTop: 12 }}>
-                        ⚠ This borrower already has <strong>Loan #{r.loan_no}</strong>
-                        {monthly && <> (monthly · {money(r.daily_installment)}/month)</>} ({money(r.principal)}) running with{' '}
-                        <strong>{money(r.outstanding)}</strong> still to collect
-                        {overdue > 0 ? <> · overdue (बकाया) <strong>{money(overdue)}</strong></> : ' · nothing overdue'}.
-                        {toNum(r.outstanding) > 0 && (
-                          <div style={{ marginTop: 8 }}>
-                            <label className="check">
-                              <input type="checkbox" checked={!!c?.on} onChange={(e) => toggleCut(r, e.target.checked)} />
-                              {monthly
-                                ? <>Cut monthly installment of loan #{r.loan_no} from this new loan (मासिक किस्त काटें)</>
-                                : <>Cut old dues of loan #{r.loan_no} from this new loan (बकाया काटें)</>}
-                            </label>
-                            {c?.on && (
-                              <div className="form-grid" style={{ marginTop: 8 }}>
-                                {monthly ? (
-                                  <>
-                                    <Field
-                                      label="Months to cut (कितने महीने)"
-                                      hint={`${money(r.daily_installment)}/month · ${monthsLeft(r)} month${monthsLeft(r) === 1 ? '' : 's'} left on loan #${r.loan_no}`}
-                                    >
-                                      <div className="amount-cell">
-                                        <button type="button" className="step-btn" onClick={() => setCutMonths(r, toNum(c.months) - 1)} aria-label="One month less">−</button>
-                                        <input type="number" min="0" max={monthsLeft(r)} step="1" inputMode="numeric" value={c.months} onChange={(e) => setCutMonths(r, e.target.value)} />
-                                        <button type="button" className="step-btn" onClick={() => setCutMonths(r, toNum(c.months) + 1)} aria-label="One month more">+</button>
-                                      </div>
-                                    </Field>
-                                    <Field
-                                      label="Amount to cut ₹ (auto)"
-                                      hint={`${toNum(c.months) || 0} × ${money(r.daily_installment)}${toNum(c.amount) < toNum(c.months) * toNum(r.daily_installment) ? ` — capped at balance ${money(r.outstanding)}` : ''}. Loan #${r.loan_no} keeps running for the rest. Not cash — not in the cash book.`}
-                                    >
-                                      <input type="text" readOnly value={money(c.amount)} />
-                                    </Field>
-                                  </>
-                                ) : (
-                                  <Field
-                                    label="Amount to cut ₹"
-                                    hint={`Overdue ${money(overdue)} · max ${money(r.outstanding)}. Loan #${r.loan_no} keeps running for the rest. In the Day Book as collected and given (no cash moves).`}
-                                  >
-                                    <input type="number" min="0" step="any" value={c.amount} onChange={(e) => setCuts((x) => ({ ...x, [r.id]: { ...x[r.id], amount: e.target.value } }))} />
-                                  </Field>
-                                )}
-                                {(toNum(r.penalty_due) > 0 || toNum(c.penalty) > 0) && (
-                                  <Field label="Penalty to cut ₹ · जुर्माना" hint={`Penalty due ${money(r.penalty_due)} — counted as penalty income`}>
-                                    <input type="number" min="0" step="any" value={c.penalty} onChange={(e) => setCuts((x) => ({ ...x, [r.id]: { ...x[r.id], penalty: e.target.value } }))} />
-                                  </Field>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        <div className="btn-row" style={{ marginTop: 8 }}>
-                          <Link className="btn" to={`/loans/new?renew=${r.id}`}>🔁 Renew loan #{r.loan_no} (cut full balance, close it)</Link>
-                          <span className="muted small">or continue below for a separate loan</span>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {(running.data || []).map((r) => runningLoanBox(r, false))}
                 </>
               ) : (
                 <BorrowerFields value={newBorrower} onChange={setNewBorrower} />
@@ -641,9 +693,9 @@ export default function LoanForm() {
             <div className="calc-row"><span>Loan given (cash out)</span><strong>{money(d.principal - d.interest_amount)}</strong></div>
             <div className="calc-row minus"><span>− Advance kept ({form.advance_days || 0} {F.units}) · {form.advance_mode === 'upi' ? 'UPI' : 'Cash'} income</span><strong>{money(d.advance_amount)}</strong></div>
             {renewId && (
-              <div className="calc-row minus"><span>− Old loan #{old?.loan_no} balance</span><strong>{money(adjustAmt)}</strong></div>
+              <div className="calc-row minus"><span>− Loan #{old?.loan_no} {closeOld ? 'balance (renewed)' : 'part cut'}{oldPenAmt > 0 ? ` + penalty ${money(oldPenAmt)}` : ''}</span><strong>{money(round2(adjustAmt + oldPenAmt))}</strong></div>
             )}
-            {!renewId && cutRows.map((r) => (
+            {cutRows.map((r) => (
               <div key={r.id} className="calc-row minus"><span>− Loan #{r.loan_no} {r.frequency === 'monthly' ? `monthly installment (${toNum(cuts[r.id]?.months)} month${toNum(cuts[r.id]?.months) === 1 ? '' : 's'})` : 'old dues'}{r.pen > 0 ? ` + penalty ${money(r.pen)}` : ''}</span><strong>{money(round2(r.cut + r.pen))}</strong></div>
             ))}
             {otherRows.map((r) => (
