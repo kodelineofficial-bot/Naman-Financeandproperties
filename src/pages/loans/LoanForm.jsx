@@ -38,6 +38,28 @@ function AutoInput({ name, form, ov, derived, onChange, onAuto, step = 'any' }) 
   );
 }
 
+/**
+ * Days (installments) to cut ⇄ amount: days × installment, never past the balance.
+ * Shows the days the typed amount covers (2.5 = two and a half days).
+ */
+function DaysToCut({ amount, installment, max, onAmount, unit = 'day' }) {
+  const inst = toNum(installment);
+  const left = inst > 0 ? Math.ceil(toNum(max) / inst - 0.001) : 0;
+  const days = amount === '' || inst <= 0 ? '' : round2(toNum(amount) / inst);
+  const setDays = (v) => {
+    if (v === '') return onAmount('');
+    const n = Math.max(0, Math.min(toNum(v), left));
+    onAmount(String(round2(Math.min(n * inst, toNum(max)))));
+  };
+  return (
+    <div className="amount-cell">
+      <button type="button" className="step-btn" onClick={() => setDays(Math.ceil(toNum(days)) - 1)} aria-label={`One ${unit} less`}>−</button>
+      <input type="number" min="0" max={left} step="any" inputMode="decimal" value={days} onChange={(e) => setDays(e.target.value)} />
+      <button type="button" className="step-btn" onClick={() => setDays(Math.floor(toNum(days)) + 1)} aria-label={`One ${unit} more`}>+</button>
+    </div>
+  );
+}
+
 export default function LoanForm() {
   const { id } = useParams();
   const isEdit = Boolean(id);
@@ -406,12 +428,21 @@ export default function LoanForm() {
                     </Field>
                   </>
                 ) : (
-                  <Field
-                    label="Amount to cut ₹"
-                    hint={`Overdue ${money(overdue)} · max ${money(r.outstanding)}. Loan #${r.loan_no} keeps running for the rest (closes if fully cut). In the Day Book as collected and given (no cash moves).`}
-                  >
-                    <input type="number" min="0" step="any" value={c.amount} onChange={(e) => setCuts((x) => ({ ...x, [r.id]: { ...x[r.id], amount: e.target.value } }))} />
-                  </Field>
+                  <>
+                    <Field
+                      label="Days to cut (कितने दिन)"
+                      hint={`${money(r.daily_installment)}/day · ${monthsLeft(r)} day${monthsLeft(r) === 1 ? '' : 's'} left on loan #${r.loan_no}`}
+                    >
+                      <DaysToCut amount={c.amount} installment={r.daily_installment} max={r.outstanding}
+                        onAmount={(amount) => setCuts((x) => ({ ...x, [r.id]: { ...x[r.id], amount } }))} />
+                    </Field>
+                    <Field
+                      label="Amount to cut ₹"
+                      hint={`Overdue ${money(overdue)} · max ${money(r.outstanding)}. Loan #${r.loan_no} keeps running for the rest (closes if fully cut). In the Day Book as collected and given (no cash moves).`}
+                    >
+                      <input type="number" min="0" step="any" value={c.amount} onChange={(e) => setCuts((x) => ({ ...x, [r.id]: { ...x[r.id], amount: e.target.value } }))} />
+                    </Field>
+                  </>
                 )}
                 {(toNum(r.penalty_due) > 0 || toNum(c.penalty) > 0) && (
                   <Field label="Penalty to cut ₹ · जुर्माना" hint={`Penalty due ${money(r.penalty_due)} — counted as penalty income`}>
@@ -477,6 +508,14 @@ export default function LoanForm() {
                     >
                       <input className="input-big" type="number" min="0" step="any" value={adjust} onChange={(e) => setAdjust(e.target.value)} />
                     </Field>
+                    {!closeOld && (
+                      <Field
+                        label={`${freqOf(old).label === 'Monthly' ? 'Months' : 'Days'} to cut (${freqOf(old).label === 'Monthly' ? 'कितने महीने' : 'कितने दिन'})`}
+                        hint={`${money(old.daily_installment)}${freqOf(old).per} · max ${money(oldBalance)}`}
+                      >
+                        <DaysToCut amount={adjust} installment={old.daily_installment} max={oldBalance} onAmount={setAdjust} unit={freqOf(old).unit} />
+                      </Field>
+                    )}
                     {(toNum(old.penalty_due) > 0 || oldPenAmt > 0) && (
                       <Field label="Penalty to cut ₹ · जुर्माना" hint={`Penalty due ${money(old.penalty_due)} — counted as penalty income`}>
                         <input type="number" min="0" step="any" value={oldPenalty} onChange={(e) => setOldPenalty(e.target.value)} />
