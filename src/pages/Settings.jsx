@@ -186,7 +186,7 @@ export default function Settings() {
               <Field label="Penalty per day (₹)" hint="For every day the borrower is behind">
                 <input type="number" min="0" step="any" value={f.penalty_per_day} onChange={set('penalty_per_day')} />
               </Field>
-              <Field label="Penalty starts on day" hint="First missed day = day 1 · 3 = from the third day">
+              <Field label="Penalty starts on day" hint="Days in a row with no payment · 3 = on the 3rd unpaid day all 3 days are charged; any payment starts again">
                 <input type="number" min="2" step="1" value={f.penalty_start_day} onChange={set('penalty_start_day')} />
               </Field>
               <Field label="Count penalty from" hint="Missed days before this date are not charged">
@@ -197,12 +197,12 @@ export default function Settings() {
           <p className="muted small">
             {f.penalty_enabled ? (
               <>
-                Example: penalty {money(f.penalty_per_day)}/day, starting on day {startDay}. A missed installment paid by the end of day{' '}
-                {startDay - 1} = no penalty. On day {startDay} every day from the first missed day is charged ={' '}
-                {money(startDay * toNum(f.penalty_per_day))}, then {money(f.penalty_per_day)} more each day the borrower is still behind
-                (day {startDay + 1} = {money((startDay + 1) * toNum(f.penalty_per_day))}). Paying the overdue does not remove penalty already
-                counted; falling behind again adds a new penalty on top. Counted from{' '}
-                {fmtDateLong(f.penalty_from)}; today is never counted. Penalty is kept separate from the loan balance — take it or
+                Example: penalty {money(f.penalty_per_day)}/day, starting on day {startDay}. Only days in a row with no payment count:
+                {' '}{startDay - 1} unpaid day{startDay - 1 === 1 ? '' : 's'} in a row = no penalty. On the {startDay}th unpaid day in a row
+                all of them are charged = {money(startDay * toNum(f.penalty_per_day))}, then {money(f.penalty_per_day)} more for each
+                further unpaid day (day {startDay + 1} = {money((startDay + 1) * toNum(f.penalty_per_day))}). Any payment ends the run —
+                missing a single day now and then is never charged. Paying the overdue does not remove penalty already counted.
+                Counted from {fmtDateLong(f.penalty_from)}. Penalty is kept separate from the loan balance — take it or
                 waive it (माफ़) from the loan page. A single loan can be kept penalty-free from its page.
               </>
             ) : (

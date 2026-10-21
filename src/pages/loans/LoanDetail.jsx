@@ -963,7 +963,7 @@ This loan's dues were paid from another loan's cash — that cut is removed too 
           label="Penalty · जुर्माना"
           value={money(penaltyDue)}
           tone={penaltyDue > 0 ? 'red' : undefined}
-          hint={`${toNum(l.penalty_days)} penalty day(s) · ${l.penalty_off ? 'off for this loan' : penaltyOn ? `${money(l.penalty_rate)}/day from day ${penaltyStartDay}` : 'off in Settings'}`}
+          hint={`${toNum(l.penalty_days)} penalty day(s) · ${l.penalty_off ? 'off for this loan' : penaltyOn ? `${money(l.penalty_rate)}/day after ${penaltyStartDay} unpaid days in a row` : 'off in Settings'}`}
           onClick={() => document.getElementById('penalty-card')?.scrollIntoView({ behavior: 'smooth' })}
         />
       </div>
@@ -1074,7 +1074,7 @@ This loan's dues were paid from another loan's cash — that cut is removed too 
           ) : !penaltyOn ? (
             <>Penalty is off in <Link to="/settings">Settings</Link>. </>
           ) : (
-            <>{money(l.penalty_rate)} per day behind{ownPenalty ? ' (set on this loan)' : ''}, from day {penaltyStartDay} of a missed installment · </>
+            <>{money(l.penalty_rate)} per day{ownPenalty ? ' (set on this loan)' : ''} when {penaltyStartDay} or more days in a row go unpaid (all those days are charged) · </>
           )}
           {data.penaltyOpening.date && !l.penalty_off && (
             <>Set by hand: <strong>{money(data.penaltyOpening.amount)}</strong> up to {fmtDateLong(data.penaltyOpening.date)}, counted from the next day · </>
