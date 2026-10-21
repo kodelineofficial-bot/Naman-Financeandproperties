@@ -99,7 +99,7 @@ The latest Karan Office clarification is in `supabase/repairs/karan_office_230.s
 
 ### 1. Supabase
 1. Create a project at https://supabase.com and choose region **Mumbai (ap-south-1)**.
-2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql` through `032_settle_with_discount.sql`).
+2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql` through `033_cut_and_close_other_loan.sql`).
 3. *(Optional demo data)* Run `supabase/seed.sql`.
 4. **Authentication → Users → Add user**: enter the owner's email and password, and tick *Auto confirm*.
 5. Make that user an admin (SQL Editor):

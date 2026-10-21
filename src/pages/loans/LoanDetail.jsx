@@ -38,7 +38,7 @@ function DuesCutModal({ loan, pending, onClose }) {
     <Modal title={`Cut someone's dues · बकाया काटें — ${loan.borrower_name}`} onClose={onClose} wide>
       <form onSubmit={submit}>
         <p className="muted small">
-          Still to give on this loan: <strong>{money(pending)}</strong>. Pick the loan whose overdue / penalty {loan.borrower_name} is paying —
+          Still to give on this loan: <strong>{money(pending)}</strong>. Pick the loan whose overdue / penalty {loan.borrower_name} is paying (or close it fully) —
           it is cut from the money you still have to hand over.
         </p>
         <div className="form-grid">

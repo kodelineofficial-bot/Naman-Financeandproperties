@@ -10,7 +10,7 @@ import { canSyncPayout, isCashDisbursement, loanOverridesAfterEdit, loanPayoutEd
 import { useAction, useLoad } from '../../lib/hooks.js';
 import { q, supabase } from '../../lib/supabase.js';
 import { BORROWER_FIELDS, BorrowerFields, cleanBorrower } from './BorrowerForm.jsx';
-import { DuesCutPicker, duesCutErrors, duesCutRows, saveDuesCuts } from './DuesCut.jsx';
+import { DaysToCut, DuesCutPicker, duesCutErrors, duesCutRows, saveDuesCuts } from './DuesCut.jsx';
 
 const AUTO_FIELDS = ['interest_amount', 'daily_installment', 'total_repayable', 'duration_days', 'advance_amount'];
 
@@ -34,28 +34,6 @@ function AutoInput({ name, form, ov, derived, onChange, onAuto, step = 'any' }) 
       ) : (
         <span className="auto-tag">auto</span>
       )}
-    </div>
-  );
-}
-
-/**
- * Days (installments) to cut ⇄ amount: days × installment, never past the balance.
- * Shows the days the typed amount covers (2.5 = two and a half days).
- */
-function DaysToCut({ amount, installment, max, onAmount, unit = 'day' }) {
-  const inst = toNum(installment);
-  const left = inst > 0 ? Math.ceil(toNum(max) / inst - 0.001) : 0;
-  const days = amount === '' || inst <= 0 ? '' : round2(toNum(amount) / inst);
-  const setDays = (v) => {
-    if (v === '') return onAmount('');
-    const n = Math.max(0, Math.min(toNum(v), left));
-    onAmount(String(round2(Math.min(n * inst, toNum(max)))));
-  };
-  return (
-    <div className="amount-cell">
-      <button type="button" className="step-btn" onClick={() => setDays(Math.ceil(toNum(days)) - 1)} aria-label={`One ${unit} less`}>−</button>
-      <input type="number" min="0" max={left} step="any" inputMode="decimal" value={days} onChange={(e) => setDays(e.target.value)} />
-      <button type="button" className="step-btn" onClick={() => setDays(Math.floor(toNum(days)) + 1)} aria-label={`One ${unit} more`}>+</button>
     </div>
   );
 }
@@ -156,6 +134,7 @@ export default function LoanForm() {
   // Someone else's dues cut from this loan (Dave's loan pays G2's overdue + penalty, migration 027).
   const [otherCuts, setOtherCuts] = useState([]);
   const otherRows = duesCutRows(otherCuts);
+  const otherClosed = otherRows.filter((r) => r.close).map((r) => `#${r.loan.loan_no}`).join(', ');
   const cutTotal = round2(cutRows.reduce((t, r) => t + r.cut + r.pen, 0) + otherRows.reduce((t, r) => t + r.total, 0));
   // Monthly loan: pick how many months to cut; amount = months × installment, never past the balance.
   const monthsLeft = (r) => Math.ceil(round2(toNum(r.outstanding)) / toNum(r.daily_installment) - 0.001) || 0;
@@ -379,7 +358,7 @@ export default function LoanForm() {
       }
       return loan;
     }, isEdit ? 'Loan updated'
-      : renewId && closeOld ? `Loan renewed · old loan #${old?.loan_no} closed${cutTotal > 0 ? ` · ${money(cutTotal)} other loans cut` : ''}`
+      : renewId && closeOld ? `Loan renewed · old loan #${old?.loan_no} closed${otherClosed ? ` · loan ${otherClosed} closed too` : ''}${cutTotal > 0 ? ` · ${money(cutTotal)} other loans cut` : ''}`
       : renewId ? `Loan created · ${money(round2(adjustAmt + oldPenAmt + cutTotal))} cut · loan #${old?.loan_no} keeps running`
       : cutTotal > 0 ? `Loan created · ${money(cutTotal)} dues cut` : 'Loan created');
 
@@ -685,10 +664,13 @@ export default function LoanForm() {
           )}
 
           {!isEdit && (
-            <Card title="Cut someone else's dues · दूसरे का बकाया काटें (optional)">
+            <Card title={renewId ? "Also clear another person's loan · दूसरे का लोन (optional)" : "Cut someone else's dues · दूसरे का बकाया काटें (optional)"}>
               <p className="muted small">
-                The borrower asks you to pay another borrower&apos;s overdue / penalty out of this loan. Pick that loan — its dues are cut from the cash
-                you hand over, and that loan is paid by the same amount.
+                {renewId
+                  ? <>Two people came together? Pick the other person&apos;s loan — cut its overdue, a part, or close it fully (with penalty) from this
+                    same new loan. Loan #{old?.loan_no} above is renewed as set there; whatever is left is the cash to give.</>
+                  : <>The borrower asks you to pay another borrower&apos;s overdue / penalty out of this loan. Pick that loan — its dues are cut from the cash
+                    you hand over, and that loan is paid by the same amount. Or close it fully.</>}
               </p>
               <DuesCutPicker
                 picks={otherCuts}
@@ -738,7 +720,7 @@ export default function LoanForm() {
               <div key={r.id} className="calc-row minus"><span>− Loan #{r.loan_no} {r.frequency === 'monthly' ? `monthly installment (${toNum(cuts[r.id]?.months)} month${toNum(cuts[r.id]?.months) === 1 ? '' : 's'})` : 'old dues'}{r.pen > 0 ? ` + penalty ${money(r.pen)}` : ''}</span><strong>{money(round2(r.cut + r.pen))}</strong></div>
             ))}
             {otherRows.map((r) => (
-              <div key={r.loan.id} className="calc-row minus"><span>− {r.loan.borrower_name} · Loan #{r.loan.loan_no} dues{r.pen > 0 ? ` (incl. penalty ${money(r.pen)})` : ''}</span><strong>{money(r.total)}</strong></div>
+              <div key={r.loan.id} className="calc-row minus"><span>− {r.loan.borrower_name} · Loan #{r.loan.loan_no} {r.close ? 'closed' : 'dues'}{r.pen > 0 ? ` (incl. penalty ${money(r.pen)})` : ''}{r.forgiven > 0 ? ` · छूट ${money(r.forgiven)}` : ''}</span><strong>{money(r.total)}</strong></div>
             ))}
             <div className="calc-row total"><span>Cash to give (देना)</span><strong>{money(cashToGive)}</strong></div>
 
