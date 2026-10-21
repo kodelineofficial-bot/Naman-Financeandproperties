@@ -12,6 +12,8 @@ import { q, supabase } from '../../lib/supabase.js';
  * Money received (UPI + cash − change) is spread over the loans — by hand or with Auto-fill
  * (overdue first, then extra days) — and each loan gets its own entries: UPI is used first,
  * then cash, so the Day Book shows exactly the UPI and cash that came in.
+ * A loan can also forgive the rest (छूट, migration 032): ₹2,000 due, ₹1,800 paid → ₹200 forgiven,
+ * saved as a no-cash 'waiver' entry (penalty: a waiver) that is not in the Day Book.
  */
 
 // Old defaulters have one balance and no schedule, so no days buttons.
@@ -24,7 +26,7 @@ function daysFor(amount, inst) {
 
 function startRow(l) {
   // A defaulted (frozen) loan is only collected on purpose, so it starts unticked.
-  return { on: l.status === 'active' && toNum(l.outstanding) > 0, amount: '', days: '', penalty: '' };
+  return { on: l.status === 'active' && toNum(l.outstanding) > 0, amount: '', days: '', penalty: '', waive: false, forgive: '', forgivePen: '' };
 }
 
 const modeText = (parts) => parts.map((p) => `${p.mode === 'upi' ? 'UPI' : 'Cash'} ${money(p.amount)}`).join(' + ');
@@ -40,6 +42,15 @@ function LoanRow({ loan: l, row, split, onChange }) {
   const full = inst > 0 && toNum(row.amount) > 0 ? Math.floor((toNum(l.collected_total) + round2(row.amount)) / inst + 1e-9) : 0;
   const instParts = split.filter((p) => p.kind === 'installment');
   const penParts = split.filter((p) => p.kind === 'penalty');
+  const overdue = round2(Math.min(toNum(l.overdue), outstanding));
+  // Forgive whatever is left of `due` after the money typed on this loan.
+  const forgiveUpTo = (due) => set({
+    waive: true,
+    forgive: String(Math.max(0, round2(due - round2(row.amount)))),
+    forgivePen: String(Math.max(0, round2(penaltyDue - round2(row.penalty)))),
+  });
+  const forgivenHere = round2(Math.max(0, toNum(row.forgive)) + Math.max(0, toNum(row.forgivePen)));
+  const balanceAfter = round2(outstanding - round2(row.amount) - Math.max(0, toNum(row.forgive)));
 
   return (
     <div className={`help-box ${row.on ? 'renew-box' : ''}`} style={{ marginTop: 12 }}>
@@ -103,6 +114,33 @@ function LoanRow({ loan: l, row, split, onChange }) {
                 {penParts.length > 0 && <>penalty {modeText(penParts)}</>}
               </div>
             )}
+            <label className="check" style={{ marginTop: 8 }}>
+              <input type="checkbox" checked={row.waive} onChange={(e) => set({ waive: e.target.checked, ...(e.target.checked ? {} : { forgive: '', forgivePen: '' }) })} />
+              Forgive the rest · छूट <span className="muted small">(took less than what is due)</span>
+            </label>
+            {row.waive && (
+              <>
+                <div className="btn-row" style={{ marginTop: 6 }}>
+                  {overdue > 0 && overdue < outstanding && (
+                    <button type="button" className="btn btn-sm" onClick={() => forgiveUpTo(overdue)}>Clear overdue {money(overdue)}</button>
+                  )}
+                  <button type="button" className="btn btn-sm" onClick={() => forgiveUpTo(outstanding)}>Close loan {money(outstanding)}</button>
+                </div>
+                <div className="form-grid" style={{ marginTop: 6 }}>
+                  <Field label="Installments forgiven (₹) · छूट" hint={`Not cash · lowers the balance`}>
+                    <input type="number" inputMode="decimal" min="0" step="any" placeholder="0" value={row.forgive} onChange={(e) => set({ forgive: e.target.value })} />
+                  </Field>
+                  <Field label="Penalty forgiven (₹) · माफ़" hint={penaltyDue > 0 ? `Penalty due ${money(penaltyDue)}` : 'No penalty due'}>
+                    <input type="number" inputMode="decimal" min="0" step="any" placeholder="0" value={row.forgivePen} onChange={(e) => set({ forgivePen: e.target.value })} disabled={penaltyDue <= 0 && !toNum(row.forgivePen)} />
+                  </Field>
+                </div>
+                {forgivenHere > 0 && (
+                  <div className="muted small">
+                    Forgiven {money(forgivenHere)} (no cash) · {balanceAfter <= 0.001 ? <strong>loan will be closed</strong> : <>balance after {money(balanceAfter)}</>}
+                  </div>
+                )}
+              </>
+            )}
             {full >= 1 && (
               <div className="good-note">After saving, paid till · यहाँ तक जमा: <strong>{fmtDateLong(periodDate(l.frequency, l.collection_start_date, full))}</strong></div>
             )}
@@ -130,12 +168,23 @@ export default function BorrowerPayModal({ borrower, loans, onClose }) {
   const onPenalty = round2(items.filter((it) => it.kind === 'penalty').reduce((t, it) => t + it.amount, 0));
   const left = round2(got.total - onLoans);
   const { entries } = splitModes(items, got);
-  const loanCount = new Set(items.map((it) => it.loanId)).size;
+  const forgives = picked.filter((l) => rows[l.id].waive).flatMap((l) => [
+    { loanId: l.id, kind: 'installment', amount: round2(rows[l.id].forgive) },
+    { loanId: l.id, kind: 'penalty', amount: round2(rows[l.id].forgivePen) },
+  ]).filter((it) => it.amount > 0);
+  const forgiven = round2(forgives.reduce((t, it) => t + it.amount, 0));
+  const loanCount = new Set([...items, ...forgives].map((it) => it.loanId)).size;
 
   const errors = [];
   if (toNum(f.change) > toNum(f.cash) + 0.001) errors.push('Change given back cannot be more than the cash received.');
   for (const l of picked) {
-    if (round2(rows[l.id].amount) < 0 || round2(rows[l.id].penalty) < 0) errors.push(`Loan #${l.loan_no}: amount cannot be negative.`);
+    const r = rows[l.id];
+    if (round2(r.amount) < 0 || round2(r.penalty) < 0) errors.push(`Loan #${l.loan_no}: amount cannot be negative.`);
+    if (r.waive) {
+      if (round2(r.forgive) < 0 || round2(r.forgivePen) < 0) errors.push(`Loan #${l.loan_no}: forgiven amount cannot be negative.`);
+      if (round2(r.amount) + round2(r.forgive) > round2(toNum(l.outstanding)) + 0.001) errors.push(`Loan #${l.loan_no}: received + forgiven is more than the balance ${money(l.outstanding)}.`);
+      if (round2(r.penalty) + round2(r.forgivePen) > round2(toNum(l.penalty_due)) + 0.001) errors.push(`Loan #${l.loan_no}: penalty taken + forgiven is more than the penalty due ${money(l.penalty_due)}.`);
+    }
   }
 
   // Overdue first, then extra days; penalty already typed stays as it is.
@@ -162,8 +211,8 @@ export default function BorrowerPayModal({ borrower, loans, onClose }) {
 
   async function submit(e) {
     e.preventDefault();
-    if (got.total <= 0) return toast.error('Enter the money received (UPI / cash).');
-    if (onLoans <= 0) return toast.error('Put the money on at least one loan.');
+    if (got.total <= 0 && forgiven <= 0) return toast.error('Enter the money received (UPI / cash).');
+    if (onLoans <= 0 && forgiven <= 0) return toast.error('Put the money on at least one loan.');
     if (errors.length) return toast.error(errors[0]);
     if (Math.abs(left) > 0.005) return toast.error(left > 0 ? `${money(left)} is not put on any loan yet.` : `${money(-left)} more on loans than received.`);
     if (f.paid_on > todayStr()) return toast.error('Date cannot be in the future · aage ki tareekh nahi');
@@ -174,6 +223,12 @@ export default function BorrowerPayModal({ borrower, loans, onClose }) {
     const note = [f.note.trim(), changeNote].filter(Boolean).join(' · ') || null;
     const reps = entries.filter((x) => x.kind === 'installment').map((x) => ({ loan_id: x.loanId, paid_on: f.paid_on, amount: x.amount, mode: x.mode, note }));
     const pens = entries.filter((x) => x.kind === 'penalty').map((x) => ({ loan_id: x.loanId, kind: 'paid', paid_on: f.paid_on, amount: x.amount, mode: x.mode, note }));
+    // Forgiven (छूट): not cash, so not in the Day Book; installments lower the balance like a payment.
+    const waiveNote = ['Forgiven (छूट)', f.note.trim()].filter(Boolean).join(' · ');
+    for (const x of forgives) {
+      if (x.kind === 'installment') reps.push({ loan_id: x.loanId, paid_on: f.paid_on, amount: x.amount, mode: 'waiver', note: waiveNote });
+      else pens.push({ loan_id: x.loanId, kind: 'waived', paid_on: f.paid_on, amount: x.amount, mode: 'waiver', note: waiveNote });
+    }
     const ok = await run(async () => {
       const saved = reps.length ? await q(supabase.from('loan_repayments').insert(reps).select('id')) : [];
       try {
@@ -183,7 +238,7 @@ export default function BorrowerPayModal({ borrower, loans, onClose }) {
         if (saved.length) await q(supabase.from('loan_repayments').delete().in('id', saved.map((r) => r.id)));
         throw er;
       }
-    }, `${money(got.total)} saved on ${loanCount} loan(s) · UPI ${money(got.upi)} · cash ${money(got.cash)}`);
+    }, `${money(got.total)} saved on ${loanCount} loan(s) · UPI ${money(got.upi)} · cash ${money(got.cash)}${forgiven > 0 ? ` · ${money(forgiven)} forgiven` : ''}`);
     if (ok) onClose();
   }
 
@@ -238,7 +293,8 @@ export default function BorrowerPayModal({ borrower, loans, onClose }) {
         <div className={leftTone} style={{ marginTop: 12 }}>
           Received <strong>{money(got.total)}</strong> · On loans <strong>{money(onLoans)}</strong>
           {onPenalty > 0 && <> (incl. penalty {money(onPenalty)})</>}
-          {' '}· Left <strong>{money(left)}</strong> {Math.abs(left) <= 0.005 && onLoans > 0 && '✓'}
+          {' '}· Left <strong>{money(left)}</strong> {Math.abs(left) <= 0.005 && (onLoans > 0 || forgiven > 0) && '✓'}
+          {forgiven > 0 && <> · Forgiven (छूट, no cash) <strong className="amt-out">{money(forgiven)}</strong></>}
           {left > 0.005 && (
             <div className="btn-row" style={{ marginTop: 6 }}>
               <span className="small">Put the {money(left)} as advance on:</span>
@@ -264,7 +320,7 @@ export default function BorrowerPayModal({ borrower, loans, onClose }) {
         {errors.length > 0 && <div className="alert alert-error small">{errors.map((er) => <div key={er}>{er}</div>)}</div>}
         <div className="form-actions">
           <button type="button" className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={busy || got.total <= 0 || Math.abs(left) > 0.005 || errors.length > 0}>
+          <button className="btn btn-primary" disabled={busy || (got.total <= 0 && forgiven <= 0) || Math.abs(left) > 0.005 || errors.length > 0}>
             {busy ? 'Saving…' : `Save ${money(got.total)}`}
           </button>
         </div>
