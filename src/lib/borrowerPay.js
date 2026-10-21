@@ -71,3 +71,18 @@ export function splitModes(items, money) {
   }
   return { entries, short };
 }
+
+/**
+ * Forgiven on one loan. After Clear overdue / Close loan (row.target) it follows the money on the
+ * loan: ₹2,000 overdue, ₹1,800 put on it → ₹200; change it to ₹1,900 → ₹100. Typed by hand it stays.
+ */
+export function forgiveOf(l, row) {
+  if (!row.waive) return { inst: 0, pen: 0 };
+  if (!row.target) return { inst: round2(row.forgive), pen: round2(row.forgivePen) };
+  const outstanding = round2(toNum(l.outstanding));
+  const due = row.target === 'overdue' ? round2(Math.min(toNum(l.overdue), outstanding)) : outstanding;
+  return {
+    inst: Math.max(0, round2(due - round2(row.amount))),
+    pen: Math.max(0, round2(toNum(l.penalty_due) - round2(row.penalty))),
+  };
+}

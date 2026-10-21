@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useToast } from '../../components/Toast.jsx';
 import { Field, Modal } from '../../components/ui.jsx';
-import { autoFill, received, splitModes } from '../../lib/borrowerPay.js';
+import { autoFill, forgiveOf, received, splitModes } from '../../lib/borrowerPay.js';
 import { fmtDateLong, money, round2, toNum, todayStr } from '../../lib/format.js';
 import { freqOf, periodDate, periodsText } from '../../lib/loanMath.js';
 import { useAction } from '../../lib/hooks.js';
@@ -26,7 +26,7 @@ function daysFor(amount, inst) {
 
 function startRow(l) {
   // A defaulted (frozen) loan is only collected on purpose, so it starts unticked.
-  return { on: l.status === 'active' && toNum(l.outstanding) > 0, amount: '', days: '', penalty: '', waive: false, forgive: '', forgivePen: '' };
+  return { on: l.status === 'active' && toNum(l.outstanding) > 0, amount: '', days: '', penalty: '', waive: false, target: null, forgive: '', forgivePen: '' };
 }
 
 const modeText = (parts) => parts.map((p) => `${p.mode === 'upi' ? 'UPI' : 'Cash'} ${money(p.amount)}`).join(' + ');
@@ -43,14 +43,11 @@ function LoanRow({ loan: l, row, split, onChange }) {
   const instParts = split.filter((p) => p.kind === 'installment');
   const penParts = split.filter((p) => p.kind === 'penalty');
   const overdue = round2(Math.min(toNum(l.overdue), outstanding));
-  // Forgive whatever is left of `due` after the money typed on this loan.
-  const forgiveUpTo = (due) => set({
-    waive: true,
-    forgive: String(Math.max(0, round2(due - round2(row.amount)))),
-    forgivePen: String(Math.max(0, round2(penaltyDue - round2(row.penalty)))),
-  });
-  const forgivenHere = round2(Math.max(0, toNum(row.forgive)) + Math.max(0, toNum(row.forgivePen)));
-  const balanceAfter = round2(outstanding - round2(row.amount) - Math.max(0, toNum(row.forgive)));
+  const fg = forgiveOf(l, row);
+  // Typing a forgiven amount by hand stops it following the money on the loan.
+  const setForgive = (patch) => set({ target: null, forgive: String(fg.inst || ''), forgivePen: String(fg.pen || ''), ...patch });
+  const forgivenHere = round2(Math.max(0, fg.inst) + Math.max(0, fg.pen));
+  const balanceAfter = round2(outstanding - round2(row.amount) - Math.max(0, fg.inst));
 
   return (
     <div className={`help-box ${row.on ? 'renew-box' : ''}`} style={{ marginTop: 12 }}>
@@ -115,23 +112,23 @@ function LoanRow({ loan: l, row, split, onChange }) {
               </div>
             )}
             <label className="check" style={{ marginTop: 8 }}>
-              <input type="checkbox" checked={row.waive} onChange={(e) => set({ waive: e.target.checked, ...(e.target.checked ? {} : { forgive: '', forgivePen: '' }) })} />
+              <input type="checkbox" checked={row.waive} onChange={(e) => set({ waive: e.target.checked, ...(e.target.checked ? {} : { target: null, forgive: '', forgivePen: '' }) })} />
               Forgive the rest · छूट <span className="muted small">(took less than what is due)</span>
             </label>
             {row.waive && (
               <>
                 <div className="btn-row" style={{ marginTop: 6 }}>
                   {overdue > 0 && overdue < outstanding && (
-                    <button type="button" className="btn btn-sm" onClick={() => forgiveUpTo(overdue)}>Clear overdue {money(overdue)}</button>
+                    <button type="button" className={`btn btn-sm ${row.target === 'overdue' ? 'btn-primary' : ''}`} onClick={() => set({ target: 'overdue' })}>Clear overdue {money(overdue)}</button>
                   )}
-                  <button type="button" className="btn btn-sm" onClick={() => forgiveUpTo(outstanding)}>Close loan {money(outstanding)}</button>
+                  <button type="button" className={`btn btn-sm ${row.target === 'full' ? 'btn-primary' : ''}`} onClick={() => set({ target: 'full' })}>Close loan {money(outstanding)}</button>
                 </div>
                 <div className="form-grid" style={{ marginTop: 6 }}>
-                  <Field label="Installments forgiven (₹) · छूट" hint={`Not cash · lowers the balance`}>
-                    <input type="number" inputMode="decimal" min="0" step="any" placeholder="0" value={row.forgive} onChange={(e) => set({ forgive: e.target.value })} />
+                  <Field label="Installments forgiven (₹) · छूट" hint={row.target ? 'Follows the money on this loan · not cash' : 'Not cash · lowers the balance'}>
+                    <input type="number" inputMode="decimal" min="0" step="any" placeholder="0" value={row.target ? String(fg.inst || '') : row.forgive} onChange={(e) => setForgive({ forgive: e.target.value })} />
                   </Field>
                   <Field label="Penalty forgiven (₹) · माफ़" hint={penaltyDue > 0 ? `Penalty due ${money(penaltyDue)}` : 'No penalty due'}>
-                    <input type="number" inputMode="decimal" min="0" step="any" placeholder="0" value={row.forgivePen} onChange={(e) => set({ forgivePen: e.target.value })} disabled={penaltyDue <= 0 && !toNum(row.forgivePen)} />
+                    <input type="number" inputMode="decimal" min="0" step="any" placeholder="0" value={row.target ? String(fg.pen || '') : row.forgivePen} onChange={(e) => setForgive({ forgivePen: e.target.value })} disabled={penaltyDue <= 0 && !fg.pen} />
                   </Field>
                 </div>
                 {forgivenHere > 0 && (
@@ -168,10 +165,10 @@ export default function BorrowerPayModal({ borrower, loans, onClose }) {
   const onPenalty = round2(items.filter((it) => it.kind === 'penalty').reduce((t, it) => t + it.amount, 0));
   const left = round2(got.total - onLoans);
   const { entries } = splitModes(items, got);
-  const forgives = picked.filter((l) => rows[l.id].waive).flatMap((l) => [
-    { loanId: l.id, kind: 'installment', amount: round2(rows[l.id].forgive) },
-    { loanId: l.id, kind: 'penalty', amount: round2(rows[l.id].forgivePen) },
-  ]).filter((it) => it.amount > 0);
+  const forgives = picked.flatMap((l) => {
+    const fg = forgiveOf(l, rows[l.id]);
+    return [{ loanId: l.id, kind: 'installment', amount: fg.inst }, { loanId: l.id, kind: 'penalty', amount: fg.pen }];
+  }).filter((it) => it.amount > 0);
   const forgiven = round2(forgives.reduce((t, it) => t + it.amount, 0));
   const loanCount = new Set([...items, ...forgives].map((it) => it.loanId)).size;
 
@@ -181,9 +178,10 @@ export default function BorrowerPayModal({ borrower, loans, onClose }) {
     const r = rows[l.id];
     if (round2(r.amount) < 0 || round2(r.penalty) < 0) errors.push(`Loan #${l.loan_no}: amount cannot be negative.`);
     if (r.waive) {
-      if (round2(r.forgive) < 0 || round2(r.forgivePen) < 0) errors.push(`Loan #${l.loan_no}: forgiven amount cannot be negative.`);
-      if (round2(r.amount) + round2(r.forgive) > round2(toNum(l.outstanding)) + 0.001) errors.push(`Loan #${l.loan_no}: received + forgiven is more than the balance ${money(l.outstanding)}.`);
-      if (round2(r.penalty) + round2(r.forgivePen) > round2(toNum(l.penalty_due)) + 0.001) errors.push(`Loan #${l.loan_no}: penalty taken + forgiven is more than the penalty due ${money(l.penalty_due)}.`);
+      const fg = forgiveOf(l, r);
+      if (fg.inst < 0 || fg.pen < 0) errors.push(`Loan #${l.loan_no}: forgiven amount cannot be negative.`);
+      if (round2(r.amount) + fg.inst > round2(toNum(l.outstanding)) + 0.001) errors.push(`Loan #${l.loan_no}: received + forgiven is more than the balance ${money(l.outstanding)}.`);
+      if (round2(r.penalty) + fg.pen > round2(toNum(l.penalty_due)) + 0.001) errors.push(`Loan #${l.loan_no}: penalty taken + forgiven is more than the penalty due ${money(l.penalty_due)}.`);
     }
   }
 
