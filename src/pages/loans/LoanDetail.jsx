@@ -442,6 +442,102 @@ function PenaltyModal({ kind, loanId, due, borrower, onClose }) {
 }
 
 /**
+ * Take less, forgive the rest (migration 032): ₹2,000 due, ₹1,800 paid → ₹1,800 received, ₹200 forgiven.
+ * The money goes on the installments first, then the penalty. Forgiving the full balance closes the loan.
+ */
+function SettleLessModal({ loan: l, onClose }) {
+  const toast = useToast();
+  const [busy, run] = useAction(toast);
+  const outstanding = round2(toNum(l.outstanding));
+  const overdue = round2(Math.min(toNum(l.overdue), outstanding));
+  const penaltyDue = round2(toNum(l.penalty_due));
+  const [f, setF] = useState({
+    what: overdue > 0 && overdue < outstanding ? 'overdue' : 'full',
+    custom: '', penalty: penaltyDue > 0, received: '', paid_on: todayStr(), mode: 'cash', note: '',
+  });
+  const instDue = f.what === 'full' ? outstanding : f.what === 'overdue' ? overdue : round2(Math.min(toNum(f.custom), outstanding));
+  const penDue = f.penalty ? penaltyDue : 0;
+  const due = round2(instDue + penDue);
+  const received = round2(f.received);
+  const forgiven = round2(due - received);
+  const instIn = Math.min(received, instDue);
+  const closes = f.what === 'full' || instDue >= outstanding;
+  const errors = [];
+  if (due <= 0) errors.push('Nothing is due.');
+  else if (received >= due) errors.push(`Received ${money(received)} is not less than the ${money(due)} due — use Take payment.`);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (errors.length) return toast.error(errors[0]);
+    if (f.paid_on > todayStr()) return toast.error('Date cannot be in the future · aage ki tareekh nahi');
+    if (!window.confirm(`Take ${money(received)} and forgive ${money(forgiven)} (छूट)?${closes ? `\n\nLoan #${l.loan_no} will be closed.` : ''}`)) return;
+    const ok = await run(
+      () => q(supabase.rpc('settle_with_discount', {
+        p_loan: l.id, p_date: f.paid_on, p_inst_due: instDue, p_pen_due: penDue, p_received: received, p_mode: f.mode, p_note: f.note.trim() || null,
+      })),
+      `${money(received)} received · ${money(forgiven)} forgiven${closes ? ' · loan closed' : ''}`,
+    );
+    if (ok) onClose();
+  }
+
+  const opt = (what, label) => (
+    <button type="button" className={`btn btn-sm ${f.what === what ? 'btn-primary' : ''}`} onClick={() => setF({ ...f, what })}>{label}</button>
+  );
+
+  return (
+    <Modal title={`Take less · छूट देकर — ${l.borrower_name}`} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="quick-days">
+          <span className="field-label">What is due? · कितना बनता है?</span>
+          <div className="btn-row">
+            {overdue > 0 && overdue < outstanding && opt('overdue', `Overdue ${money(overdue)}`)}
+            {opt('full', `Full balance ${money(outstanding)} · close loan`)}
+            {opt('custom', 'Other amount')}
+          </div>
+        </div>
+        <div className="form-grid">
+          {f.what === 'custom' && (
+            <Field label="Installments due (₹)" hint={`Balance ${money(outstanding)}`}>
+              <input type="number" inputMode="decimal" min="0" step="any" value={f.custom} onChange={(e) => setF({ ...f, custom: e.target.value })} />
+            </Field>
+          )}
+          {penaltyDue > 0 && (
+            <label className="check span-2">
+              <input type="checkbox" checked={f.penalty} onChange={(e) => setF({ ...f, penalty: e.target.checked })} />
+              Include penalty due {money(penaltyDue)}
+            </label>
+          )}
+          <Field label="Money received (₹) · कितना दिया" hint={`Due ${money(due)}`}>
+            <input className="input-big" type="number" inputMode="decimal" min="0" step="any" required autoFocus value={f.received} onChange={(e) => setF({ ...f, received: e.target.value })} />
+          </Field>
+          <Field label="Date money came">
+            <input type="date" required max={todayStr()} value={f.paid_on} onChange={(e) => setF({ ...f, paid_on: e.target.value })} />
+          </Field>
+          <Field label="Mode"><ModeSelect value={f.mode} onChange={(v) => setF({ ...f, mode: v })} /></Field>
+          <Field label="Note"><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="Reason (optional)" /></Field>
+        </div>
+        {due > 0 && received < due && (
+          <div className="good-note">
+            Due {money(due)} · received <strong>{money(received)}</strong> · forgiven (छूट) <strong className="amt-out">{money(forgiven)}</strong>
+            <div className="muted small">
+              Installments: {money(instIn)} received{instDue - instIn > 0 && <>, {money(round2(instDue - instIn))} forgiven</>}
+              {penDue > 0 && <> · Penalty: {money(round2(received - instIn))} received{penDue - (received - instIn) > 0 && <>, {money(round2(penDue - (received - instIn)))} forgiven</>}</>}
+              {closes ? ' · loan will be closed' : ` · balance after: ${money(round2(outstanding - instDue))}`}
+            </div>
+          </div>
+        )}
+        {errors.length > 0 && toNum(f.received) > 0 && <div className="alert alert-error small">{errors[0]}</div>}
+        <p className="muted small">Only the money received goes in the Day Book. The forgiven part is not cash — it only lowers what is due.</p>
+        <div className="form-actions">
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy || errors.length > 0}>{busy ? 'Saving…' : 'Save'}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/**
  * Edit penalty (migration 025): type what the penalty due should be. Lower → a waiver for the
  * difference, higher → an 'added' entry for the difference. Neither is money.
  */
@@ -685,6 +781,7 @@ export default function LoanDetail() {
   const pendingDisb = toNum(l.pending_disbursement);
   const outstanding = toNum(l.outstanding);
   const penaltyDue = toNum(l.penalty_due);
+  const forgiven = toNum(l.forgiven);
   const penaltyAdded = l.penalty_off ? 0 : penalties.filter((r) => r.kind === 'added').reduce((s, r) => s + toNum(r.amount), 0);
   // A penalty amount typed on the loan itself applies even when the Settings switch is off.
   const ownPenalty = data.ownPenaltyRate != null;
@@ -764,6 +861,9 @@ This loan's dues were paid from another loan's cash — that cut is removed too 
         {l.status === 'defaulted' && old && (
           <button className="btn btn-primary btn-lg" onClick={() => setModal('old-pay')}>₹ Take payment · पैसे लिए</button>
         )}
+        {isRunning && outstanding > 0 && (
+          <button className="btn btn-lg" onClick={() => setModal('settle-less')}>Take less · छूट देकर</button>
+        )}
         {l.status === 'defaulted' && !old && (
           <>
             <button className="btn btn-primary btn-lg" onClick={() => setModal('settle')}>₹ Settle · पूरा पैसा</button>
@@ -832,12 +932,12 @@ This loan's dues were paid from another loan's cash — that cut is removed too 
           </p>
           <div className="stats">
             <Stat label="Balance · बाकी" value={money(outstanding)} tone={outstanding > 0 ? 'red' : 'green'} hint={l.status === 'closed' ? `Cleared on ${fmtDate(l.closed_on)}` : 'Still to take'} />
-            <Stat label="Received · जमा" value={money(l.collected_cash)} tone="green" hint={`${reps.length} payment(s) · last ${fmtDate(l.last_paid_on)}`} />
+            <Stat label="Received · जमा" value={money(toNum(l.collected_cash) - forgiven)} tone="green" hint={`${reps.length} payment(s) · last ${fmtDate(l.last_paid_on)}${forgiven > 0 ? ` · ${money(forgiven)} forgiven` : ''}`} />
             <Stat label="Balance when added" value={money(l.total_repayable)} hint={toNum(l.principal) !== toNum(l.total_repayable) ? `Original loan ${money(l.principal)}` : undefined} />
           </div>
           <Card>
             <div className="progress-line">
-              <span>{money(l.collected_cash)} of {money(l.total_repayable)} received</span>
+              <span>{money(l.collected_cash)} of {money(l.total_repayable)} received{forgiven > 0 && ` (incl. ${money(forgiven)} forgiven)`}</span>
               <strong>{l.progress_pct}%</strong>
             </div>
             <Progress pct={l.progress_pct} />
@@ -856,7 +956,7 @@ This loan's dues were paid from another loan's cash — that cut is removed too 
       {!old && (<>
       <div className="stats">
         <Stat label="Balance · बाकी" value={money(l.status === 'renewed' ? 0 : outstanding)} tone="gold" hint={l.status === 'renewed' ? 'Renewed — moved to new loan' : `${l.installments_left} installments left`} />
-        <Stat label="Collected · जमा" value={money(l.collected_total)} tone="green" hint={`incl. ${money(l.advance_amount)} advance`} />
+        <Stat label="Collected · जमा" value={money(l.collected_total)} tone="green" hint={`incl. ${money(l.advance_amount)} advance${forgiven > 0 ? ` · ${money(forgiven)} forgiven` : ''}`} />
         <Stat label="Overdue · बकाया" value={money(l.overdue)} tone={toNum(l.overdue) > 0 ? 'red' : undefined} hint={`${missedDays} missed ${missedDays === 1 ? F.unit : F.units}`} />
         <Stat label="To give · देना बाकी" value={money(pendingDisb)} tone={pendingDisb > 0 ? 'red' : undefined} hint={`Given ${money(l.disbursed)} of ${money(l.net_disbursable)}`} />
         <Stat
@@ -1055,6 +1155,7 @@ This loan's dues were paid from another loan's cash — that cut is removed too 
 
         <Card title="Actions">
           <div className="btn-row">
+            {isRunning && outstanding > 0 && <button className="btn" disabled={busy} onClick={() => setModal('settle-less')}>Take less, forgive the rest · छूट</button>}
             {l.status === 'active' && <button className="btn" disabled={busy} onClick={() => setStatus('closed')}>Settle / close now</button>}
             {l.status === 'active' && <button className="btn btn-danger-outline" disabled={busy} onClick={() => setStatus('defaulted')}>Mark defaulted</button>}
             {l.status === 'defaulted' && !old && <button className="btn" disabled={busy} onClick={() => setStatus('active')}>▶ Resume · फिर से चालू</button>}
@@ -1105,6 +1206,7 @@ This loan's dues were paid from another loan's cash — that cut is removed too 
           onClose={() => setModal(null)}
         />
       )}
+      {modal === 'settle-less' && <SettleLessModal loan={l} onClose={() => setModal(null)} />}
       {modal === 'dues-cut' && <DuesCutModal loan={l} pending={pendingDisb} onClose={() => setModal(null)} />}
       {modal === 'old-pay' &&<DefaulterPayModal loan={l} onClose={() => setModal(null)} />}
       {modal === 'old-edit' && <OldDefaulterModal loan={l} onClose={() => setModal(null)} />}

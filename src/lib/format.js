@@ -160,7 +160,7 @@ export const MODES = [
 ];
 
 export const modeLabel = (m) =>
-  m === 'renewal' ? 'Adjusted (no cash)' : m === 'opening' ? 'Old loan (not in cash book)' : m === 'upi' ? 'UPI (not counted)' : MODES.find((x) => x.value === m)?.label || m || '—';
+  m === 'renewal' ? 'Adjusted (no cash)' : m === 'waiver' ? 'Forgiven · छूट (no cash)' : m === 'opening' ? 'Old loan (not in cash book)' : m === 'upi' ? 'UPI (not counted)' : MODES.find((x) => x.value === m)?.label || m || '—';
 
 /** UPI money is shown in the books but left out of money in / out and cash in hand. */
 export const isUpi = (r) => r?.mode === 'upi';

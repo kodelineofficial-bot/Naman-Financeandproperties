@@ -86,7 +86,9 @@ The latest Karan Office clarification is in `supabase/repairs/karan_office_230.s
 
 **Day Book:** Total in includes the opening cash, like the paper diary (closing = total in − total out).
 
-**Upgrading an existing installation:** apply any migrations not yet run, in number order, before deploying this frontend (020, 021 and 022 for the advance-mode changes; 023–031 after them). Migration 021 also includes the updated atomic Edit terms function. If 021 and the Karan repair are already applied, run 022 to add the matching cuts; no second data correction is necessary. General migrations do not guess or rewrite historical payouts; the separate Karan repair is narrowly checked.
+**Take less, forgive the rest (migration 032):** the loan page has *Take less · छूट देकर* for running loans (also defaulted and old defaulters). Pick what is due — the overdue, the full balance (closes the loan) or another amount — tick whether the penalty is included, and enter what the borrower actually paid. ₹2,000 due, ₹1,800 paid → ₹1,800 cash/UPI payment and ₹200 forgiven. The money goes on the installments first, then the penalty. The forgiven installments are saved as a *Forgiven (no cash)* entry: they lower the balance (so the loan closes at ₹0) but stay out of the Day Book, cash in hand, today's collection and the collection sheet. Forgiven penalty is a normal penalty waiver. Deleting the forgiven entry puts the balance back (and re-opens the loan).
+
+**Upgrading an existing installation:** apply any migrations not yet run, in number order, before deploying this frontend (020, 021 and 022 for the advance-mode changes; 023–032 after them). Migration 021 also includes the updated atomic Edit terms function. If 021 and the Karan repair are already applied, run 022 to add the matching cuts; no second data correction is necessary. General migrations do not guess or rewrite historical payouts; the separate Karan repair is narrowly checked.
 
 **Verification:** `npm test` covers term dependencies and calendar/payout regressions. `tests/loanEdits.sql` checks the save function against the real ledger and reports in an isolated database with all migrations applied; all fixtures roll back.
 `tests/advanceMode.sql` checks every Cash/UPI payout/advance combination, legacy mode fallback, mode edits, multiple payouts, renewals, and daily/monthly cashflow.
@@ -97,7 +99,7 @@ The latest Karan Office clarification is in `supabase/repairs/karan_office_230.s
 
 ### 1. Supabase
 1. Create a project at https://supabase.com and choose region **Mumbai (ap-south-1)**.
-2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql` through `031_give_money_cut_other_loans.sql`).
+2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql` through `032_settle_with_discount.sql`).
 3. *(Optional demo data)* Run `supabase/seed.sql`.
 4. **Authentication → Users → Add user**: enter the owner's email and password, and tick *Auto confirm*.
 5. Make that user an admin (SQL Editor):
