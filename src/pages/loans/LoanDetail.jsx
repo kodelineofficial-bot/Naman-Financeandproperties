@@ -71,7 +71,7 @@ function OtherLoanCut({ loan: l, row, onChange }) {
   const inst = l.old_defaulter ? 0 : toNum(l.daily_installment);
   const outstanding = round2(toNum(l.outstanding));
   const penaltyDue = round2(toNum(l.penalty_due));
-  const quick = l.frequency === 'monthly' ? [1, 2, 3, 6] : [1, 2, 3, 7, 10, 15, 30];
+  const quick = l.frequency === 'monthly' ? [1, 2, 3, 6] : [1, 2, 3, 5, 7, 10, 15, 30];
   const daysFor = (amount) => {
     const n = inst > 0 ? toNum(amount) / inst : 0;
     return n > 0 && Math.abs(n - Math.round(n)) < 1e-9 ? String(Math.round(n)) : '';
@@ -306,7 +306,7 @@ function GiveMoneyModal({ loan, pending, defaultDays, onClose }) {
 
 function EntryModal({ title, table, loanId, defaultAmount, max, daily, freq = 'daily', collected, startDate, onClose }) {
   const F = FREQ[freq] || FREQ.daily;
-  const quick = freq === 'monthly' ? [1, 2, 3, 6, 12] : [1, 2, 3, 4, 7, 10, 15, 30];
+  const quick = freq === 'monthly' ? [1, 2, 3, 6, 12] : [1, 2, 3, 4, 5, 7, 10, 15, 30];
   const toast = useToast();
   const [busy, run] = useAction(toast);
   // Days ↔ amount: typing days fills days × installment; typing an amount shows its days

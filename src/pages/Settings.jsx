@@ -201,7 +201,7 @@ export default function Settings() {
                 {' '}{startDay - 1} unpaid day{startDay - 1 === 1 ? '' : 's'} in a row = no penalty. On the {startDay}th unpaid day in a row
                 all of them are charged = {money(startDay * toNum(f.penalty_per_day))}, then {money(f.penalty_per_day)} more for each
                 further unpaid day (day {startDay + 1} = {money((startDay + 1) * toNum(f.penalty_per_day))}). Any payment ends the run —
-                missing a single day now and then is never charged. Paying the overdue does not remove penalty already counted.
+                missing a single day now and then is never charged. Penalty already showing stays: a payment entered later with an earlier date (or paying the overdue) does not take it back — only Take penalty / Waive / Edit penalty lowers it.
                 Counted from {fmtDateLong(f.penalty_from)}, and for each loan from the day it was entered in the software. Penalty is kept separate from the loan balance — take it or
                 waive it (माफ़) from the loan page. A single loan can be kept penalty-free from its page.
               </>

@@ -36,7 +36,7 @@ function LoanRow({ loan: l, row, split, onChange }) {
   const inst = instOf(l);
   const outstanding = round2(toNum(l.outstanding));
   const penaltyDue = round2(toNum(l.penalty_due));
-  const quick = l.frequency === 'monthly' ? [1, 2, 3, 6] : [1, 2, 3, 7, 10, 15, 30];
+  const quick = l.frequency === 'monthly' ? [1, 2, 3, 6] : [1, 2, 3, 5, 7, 10, 15, 30];
   const amountFor = (days) => (toNum(days) > 0 ? String(round2(Math.min(toNum(days) * inst, outstanding))) : '');
   const set = (patch) => onChange({ ...row, ...patch });
   const full = inst > 0 && toNum(row.amount) > 0 ? Math.floor((toNum(l.collected_total) + round2(row.amount)) / inst + 1e-9) : 0;
