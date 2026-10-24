@@ -304,7 +304,8 @@ function GiveMoneyModal({ loan, pending, defaultDays, onClose }) {
   );
 }
 
-function EntryModal({ title, table, loanId, defaultAmount, max, daily, freq = 'daily', collected, startDate, onClose }) {
+// penaltyDue: shows a "Penalty taken" box, saved with the payment as penalty income.
+function EntryModal({ title, table, loanId, defaultAmount, max, daily, freq = 'daily', collected, startDate, penaltyDue = 0, onClose }) {
   const F = FREQ[freq] || FREQ.daily;
   const quick = freq === 'monthly' ? [1, 2, 3, 6, 12] : [1, 2, 3, 4, 5, 7, 10, 15, 30];
   const toast = useToast();
@@ -317,19 +318,29 @@ function EntryModal({ title, table, loanId, defaultAmount, max, daily, freq = 'd
   };
   const amountFor = (days) => (toNum(days) > 0 ? String(round2(Math.min(toNum(days) * daily, max ?? Infinity))) : '');
   const [f, setF] = useState({
-    paid_on: todayStr(), amount: defaultAmount ? String(defaultAmount) : '', days: daysFor(defaultAmount), mode: 'cash', note: '',
+    paid_on: todayStr(), amount: defaultAmount ? String(defaultAmount) : '', days: daysFor(defaultAmount), penalty: '', mode: 'cash', note: '',
   });
 
   async function submit(e) {
     e.preventDefault();
     const amount = round2(f.amount);
-    if (amount <= 0) return toast.error('Enter an amount.');
+    const penalty = round2(f.penalty);
+    if (amount < 0 || penalty < 0) return toast.error('Amount cannot be negative.');
+    if (amount <= 0 && penalty <= 0) return toast.error('Enter an amount.');
     if (f.paid_on > todayStr()) return toast.error('Date cannot be in the future · aage ki tareekh nahi');
     if (max != null && amount > max + 0.001 && !window.confirm(`This is more than the remaining ${money(max)}. Save anyway?`)) return;
-    const ok = await run(
-      () => q(supabase.from(table).insert({ loan_id: loanId, paid_on: f.paid_on, amount, mode: f.mode, note: f.note.trim() || null })),
-      `${money(amount)} saved`,
-    );
+    if (penalty > penaltyDue + 0.001 && !window.confirm(`Penalty ${money(penalty)} is more than the penalty due (${money(penaltyDue)}). Save anyway?`)) return;
+    const note = f.note.trim() || null;
+    const ok = await run(async () => {
+      const saved = amount > 0 ? await q(supabase.from(table).insert({ loan_id: loanId, paid_on: f.paid_on, amount, mode: f.mode, note }).select('id')) : [];
+      try {
+        if (penalty > 0) await q(supabase.from('loan_penalty_entries').insert({ loan_id: loanId, kind: 'paid', paid_on: f.paid_on, amount: penalty, mode: f.mode, note }));
+      } catch (er) {
+        // All-or-nothing: take the payment back out if the penalty could not be saved.
+        if (saved.length) await q(supabase.from(table).delete().in('id', saved.map((r) => r.id)));
+        throw er;
+      }
+    }, penalty > 0 ? `${money(amount + penalty)} saved · penalty ${money(penalty)}` : `${money(amount)} saved`);
     if (ok) onClose();
   }
 
@@ -341,7 +352,7 @@ function EntryModal({ title, table, loanId, defaultAmount, max, daily, freq = 'd
             <input type="date" required max={todayStr()} value={f.paid_on} onChange={(e) => setF({ ...f, paid_on: e.target.value })} />
           </Field>
           <Field label="Amount (₹) · रकम" hint={daily ? periodsText(f.amount, daily, freq) : undefined}>
-            <input className="input-big" type="number" inputMode="decimal" min="0" step="any" required autoFocus value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value, days: daysFor(e.target.value) })} />
+            <input className="input-big" type="number" inputMode="decimal" min="0" step="any" required={!(penaltyDue > 0)} autoFocus value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value, days: daysFor(e.target.value) })} />
           </Field>
           {daily > 0 && (
             <Field label={freq === 'monthly' ? 'Months · कितने महीने' : 'Days · कितने दिन'} hint={`× ${money(daily)} = amount`}>
@@ -382,9 +393,20 @@ function EntryModal({ title, table, loanId, defaultAmount, max, daily, freq = 'd
               })()}
             </div>
           )}
+          {penaltyDue > 0 && (
+            <Field label="Penalty taken (₹) · जुर्माना" hint={`Penalty due ${money(penaltyDue)} · counted as penalty income`}>
+              <div className="btn-row">
+                <input type="number" inputMode="decimal" min="0" step="any" placeholder="0" value={f.penalty} onChange={(e) => setF({ ...f, penalty: e.target.value })} />
+                <button type="button" className="btn btn-sm" onClick={() => setF({ ...f, penalty: String(penaltyDue) })}>Full penalty {money(penaltyDue)}</button>
+              </div>
+            </Field>
+          )}
           <Field label="Mode"><ModeSelect value={f.mode} onChange={(v) => setF({ ...f, mode: v })} /></Field>
           <Field label="Note"><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></Field>
         </div>
+        {round2(f.penalty) > 0 && (
+          <div className="good-note">Total taken · कुल: <strong>{money(round2(f.amount) + round2(f.penalty))}</strong> = payment {money(round2(f.amount))} + penalty {money(round2(f.penalty))}</div>
+        )}
         <div className="form-actions">
           <button type="button" className="btn" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
@@ -1180,6 +1202,7 @@ This loan's dues were paid from another loan's cash — that cut is removed too 
           freq={l.frequency}
           collected={l.collected_total}
           startDate={l.collection_start_date}
+          penaltyDue={penaltyDue}
           onClose={() => setModal(null)}
         />
       )}
@@ -1194,6 +1217,7 @@ This loan's dues were paid from another loan's cash — that cut is removed too 
           freq={l.frequency}
           collected={l.collected_total}
           startDate={l.collection_start_date}
+          penaltyDue={penaltyDue}
           onClose={() => setModal(null)}
         />
       )}

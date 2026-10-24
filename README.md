@@ -88,7 +88,9 @@ The latest Karan Office clarification is in `supabase/repairs/karan_office_230.s
 
 **Take less, forgive the rest (migration 032):** the loan page has *Take less · छूट देकर* for running loans (also defaulted and old defaulters). Pick what is due — the overdue, the full balance (closes the loan) or another amount — tick whether the penalty is included, and enter what the borrower actually paid. ₹2,000 due, ₹1,800 paid → ₹1,800 cash/UPI payment and ₹200 forgiven. The money goes on the installments first, then the penalty. The forgiven installments are saved as a *Forgiven (no cash)* entry: they lower the balance (so the loan closes at ₹0) but stay out of the Day Book, cash in hand, today's collection and the collection sheet. Forgiven penalty is a normal penalty waiver. Deleting the forgiven entry puts the balance back (and re-opens the loan). The borrower page *Take payment* has the same per loan: tick *Forgive the rest · छूट*, then *Clear overdue* or *Close loan* forgives what is left after the money on that loan (installments and penalty) and keeps following it when the amount changes (₹2,000 overdue: ₹1,800 → ₹200 forgiven, ₹1,900 → ₹100); a forgiven amount typed by hand stays; forgiven money is not counted in Received − On loans.
 
-**Penalty already showing stays (migration 036):** just before a payment is added, changed or deleted, the penalty days showing at that moment are saved (`loan_penalty_held`) and always count. A payment entered late with an earlier date (₹1,200 dated 21 Oct entered on the 22nd) no longer takes back penalty already shown (MAHEMBER VIRENDER stays ₹180). A payment dated today still ends today's run. Only Take penalty / Waive / Edit penalty lowers it. Take payment day shortcuts now include 5.
+**Penalty already showing stays (migration 036):** just before a payment is added, changed or deleted, the penalty days showing at that moment are saved (`loan_penalty_held`) and always count. A payment entered late with an earlier date (₹1,200 dated 21 Oct entered on the 22nd) no longer takes back penalty already shown (MAHEMBER VIRENDER stays ₹180). Only Take penalty / Waive / Edit penalty lowers it. Take payment day shortcuts now include 5.
+
+**Penalty showing today stays too (migration 037):** today's penalty day is saved as well, so paying on the day the penalty shows no longer takes it back (day 3 shows ₹90, he pays that day → still ₹90; day 6 → ₹180 stays). Payments entered since 22 Oct replayed: 9 loans got their one lost day back (NETRPAL VIRENDER #123 ₹500 → ₹550). The loan page *Take payment* (and *Settle*) now has a *Penalty taken · जुर्माना* box (with *Full penalty*), saved with the payment as penalty income.
 
 **Upgrading an existing installation:** apply any migrations not yet run, in number order, before deploying this frontend (020, 021 and 022 for the advance-mode changes; 023–032 after them). Migration 021 also includes the updated atomic Edit terms function. If 021 and the Karan repair are already applied, run 022 to add the matching cuts; no second data correction is necessary. General migrations do not guess or rewrite historical payouts; the separate Karan repair is narrowly checked.
 
@@ -101,7 +103,7 @@ The latest Karan Office clarification is in `supabase/repairs/karan_office_230.s
 
 ### 1. Supabase
 1. Create a project at https://supabase.com and choose region **Mumbai (ap-south-1)**.
-2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql` through `036_penalty_stays.sql`).
+2. **SQL Editor → New query**: paste and **Run** each file in `supabase/migrations/` in order (`001_schema.sql` through `037_penalty_today_stays.sql`).
 3. *(Optional demo data)* Run `supabase/seed.sql`.
 4. **Authentication → Users → Add user**: enter the owner's email and password, and tick *Auto confirm*.
 5. Make that user an admin (SQL Editor):
