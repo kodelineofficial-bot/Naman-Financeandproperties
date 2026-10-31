@@ -75,6 +75,7 @@ export default function LoansList() {
       <PageHeader title="Loans" hindi="उधारी खाता" subtitle="Every loan with live balance, overdue and progress">
         <button className="btn" onClick={exportCsv} disabled={!rows.length}>⬇ Excel</button>
         <PrintButton />
+        <Link to="/loans/deleted" className="btn">Deleted loans</Link>
         <Link to="/loans/new" className="btn btn-primary">+ New loan</Link>
       </PageHeader>
 

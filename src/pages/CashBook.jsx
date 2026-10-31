@@ -3,6 +3,7 @@ import { useToast } from '../components/Toast.jsx';
 import { Card, Empty, ErrorBox, ExportButton, Field, Loading, Modal, ModeSelect, PageHeader, PrintButton, Stat } from '../components/ui.jsx';
 import { counted, fmtDate, modeLabel, money, round2, sum, todayStr } from '../lib/format.js';
 import { useAction, useLoad } from '../lib/hooks.js';
+import { entryCashNote } from '../lib/loanDelete.js';
 import { q, supabase } from '../lib/supabase.js';
 
 function CashForm({ direction, onClose }) {
@@ -66,7 +67,7 @@ export default function CashBook() {
   const outs = counted(rows).filter((r) => r.direction === 'out');
 
   async function remove(r) {
-    if (!window.confirm(`Delete ${money(r.amount)} entry?`)) return;
+    if (!window.confirm(`Delete ${money(r.amount)} entry?\n\n${entryCashNote({ ...r, date: r.entry_date })}`)) return;
     await run(() => q(supabase.from('cash_entries').delete().eq('id', r.id)), 'Deleted');
   }
 

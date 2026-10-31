@@ -5,6 +5,7 @@ import {
   EXPENSE_CATEGORIES, addDays, downloadCSV, fmtDate, modeLabel, money, monthStart, round2, sum, toNum, todayStr,
 } from '../lib/format.js';
 import { useAction, useLoad } from '../lib/hooks.js';
+import { entryCashNote } from '../lib/loanDelete.js';
 import { q, supabase } from '../lib/supabase.js';
 
 function ExpenseForm({ expense, categories, onClose }) {
@@ -102,7 +103,7 @@ export default function Expenses() {
   const days = Math.max(1, Math.round((new Date(to) - new Date(from)) / 86400000) + 1);
 
   async function remove(e) {
-    if (!window.confirm(`Delete expense of ${money(e.amount)} (${e.category})?`)) return;
+    if (!window.confirm(`Delete expense of ${money(e.amount)} (${e.category})?\n\n${entryCashNote({ amount: e.amount, mode: e.mode, direction: 'out', date: e.spent_on })}`)) return;
     await run(() => q(supabase.from('expenses').delete().eq('id', e.id)), 'Expense deleted');
   }
 

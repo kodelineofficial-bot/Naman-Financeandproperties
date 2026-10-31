@@ -34,6 +34,8 @@ export default function BorrowerDetail() {
 
   async function remove() {
     if (loans.length) return toast.error('This borrower has loans. Delete the loans first.');
+    const hidden = await q(supabase.from('loans').select('id').eq('borrower_id', id).not('deleted_at', 'is', null).limit(1));
+    if (hidden.length) return toast.error('This borrower has deleted loans whose money is kept in the Day Book, so the borrower has to stay.');
     if (!window.confirm(`Delete borrower ${b.name}?`)) return;
     const ok = await run(() => q(supabase.from('borrowers').delete().eq('id', id)), 'Borrower deleted');
     if (ok) navigate('/borrowers');

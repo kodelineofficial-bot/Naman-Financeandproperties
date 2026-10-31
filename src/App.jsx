@@ -10,6 +10,7 @@ import Dashboard from './pages/Dashboard.jsx';
 import Collection from './pages/Collection.jsx';
 import MonthlyLoans from './pages/MonthlyLoans.jsx';
 import LoansList from './pages/loans/LoansList.jsx';
+import DeletedLoans from './pages/loans/DeletedLoans.jsx';
 import LoanForm from './pages/loans/LoanForm.jsx';
 import LoanDetail from './pages/loans/LoanDetail.jsx';
 import Borrowers from './pages/loans/Borrowers.jsx';
@@ -89,6 +90,7 @@ export default function App() {
         <Route path="monthly-loans" element={<MonthlyLoans />} />
         <Route path="loans" element={<LoansList />} />
         <Route path="loans/new" element={<LoanForm />} />
+        <Route path="loans/deleted" element={<DeletedLoans />} />
         <Route path="loans/:id" element={<LoanDetail />} />
         <Route path="loans/:id/edit" element={<LoanForm />} />
         <Route path="borrowers" element={<Borrowers />} />

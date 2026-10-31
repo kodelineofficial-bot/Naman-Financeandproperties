@@ -6,6 +6,7 @@ import { deleteLedgerEntry, getLedger, getOpeningDetail } from '../lib/api.js';
 import { LEDGER_KINDS, addDays, counted, fmtDateFull, isUpi, modeLabel, money, round2, sum, toNum, todayStr } from '../lib/format.js';
 import { useAction, useLoad } from '../lib/hooks.js';
 import { displayedLedgerAmount, loanMoneyOnDate } from '../lib/ledgerAmounts.js';
+import { entryCashNote } from '../lib/loanDelete.js';
 import { q, supabase } from '../lib/supabase.js';
 
 const LINK_FOR = {
@@ -201,7 +202,7 @@ export default function DayBook() {
   }, [date]);
 
   async function onDelete(r) {
-    if (!window.confirm(`Delete this ${LEDGER_KINDS[r.kind]?.short} entry of ${money(r.amount)}?`)) return;
+    if (!window.confirm(`Delete this ${LEDGER_KINDS[r.kind]?.short} entry of ${money(r.amount)}?\n\n${entryCashNote({ ...r, date: r.entry_date })}`)) return;
     await run(() => deleteLedgerEntry(r), 'Entry deleted');
   }
 

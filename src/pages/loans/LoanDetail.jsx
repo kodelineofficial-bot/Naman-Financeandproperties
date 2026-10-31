@@ -9,6 +9,8 @@ import {
   addDays, fmtDate, fmtDateLong, fmtDateShort, modeLabel, money, round2, sum, toNum, todayStr,
 } from '../../lib/format.js';
 import { FREQ, buildLoanCalendar, freqOf, periodDate, periodsText } from '../../lib/loanMath.js';
+import { entryCashNote } from '../../lib/loanDelete.js';
+import DeleteLoanModal from './DeleteLoanModal.jsx';
 import { useAction, useLoad } from '../../lib/hooks.js';
 import { q, supabase } from '../../lib/supabase.js';
 import { DefaulterPayModal, OldDefaulterModal, addedOn } from '../Defaulters.jsx';
@@ -751,19 +753,28 @@ export default function LoanDetail() {
 
   const { data, loading, error } = useLoad(async () => {
     const [loan, disb, reps, link, renewedInto, penalties] = await Promise.all([
-      q(supabase.from('loan_summary').select('*').eq('id', id).single()),
+      q(supabase.from('loan_summary').select('*').eq('id', id).maybeSingle()),
       q(supabase.from('loan_disbursements').select('*').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
       q(supabase.from('loan_repayments').select('*').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
-      q(supabase.from('loans').select('*, from:renewed_from(loan_no)').eq('id', id).single()),
-      q(supabase.from('loans').select('id,loan_no,loan_date').eq('renewed_from', id)),
+      q(supabase.from('loans').select('*, from:renewed_from(loan_no)').eq('id', id).maybeSingle()),
+      q(supabase.from('loans').select('id,loan_no,loan_date').eq('renewed_from', id).is('deleted_at', null)),
       q(supabase.from('loan_penalty_entries').select('*, cut:cut_disb_id(loan_id)').eq('loan_id', id).order('paid_on', { ascending: false }).order('created_at', { ascending: false })),
     ]);
+    if (!loan) return { gone: true };
     return { loan, disb, reps, advanceMode: link.advance_mode, renewedFrom: link.renewed_from ? { id: link.renewed_from, loan_no: link.from?.loan_no } : null, renewedInto, penalties, ownPenaltyRate: link.penalty_per_day,
       penaltyOpening: { date: link.penalty_opening_date, amount: link.penalty_opening_amount } };
   }, [id]);
 
   if (loading && !data) return <Loading />;
   if (!data) return <ErrorBox error={error || new Error('Loan not found')} />;
+  if (data.gone) {
+    return (
+      <>
+        <PageHeader title="This loan was deleted" hindi="लोन हटाया गया" />
+        <Card><Link className="btn" to="/loans/deleted">Open Deleted loans</Link></Card>
+      </>
+    );
+  }
 
   const { loan: l, disb, reps, renewedFrom, renewedInto, penalties } = data;
   const renewAdjusted = sum(reps.filter((r) => r.mode === 'renewal' && !r.adjusted_into), 'amount');
@@ -817,7 +828,11 @@ export default function LoanDetail() {
   }
 
   async function del(table, row) {
-    if (!window.confirm(`Delete ${money(row.amount)} entry of ${fmtDate(row.paid_on)}?`)) return;
+    const direction = table === 'loan_disbursements' ? 'out' : 'in';
+    const cash = table === 'loan_penalty_entries' && row.kind !== 'paid'
+      ? 'No cash in this entry: cash in hand does not change.'
+      : entryCashNote({ amount: row.amount, mode: row.mode, direction, date: row.paid_on });
+    if (!window.confirm(`Delete ${money(row.amount)} entry of ${fmtDate(row.paid_on)}?\n\n${cash}`)) return;
     await run(() => q(supabase.from(table).delete().eq('id', row.id)), 'Entry deleted');
   }
 
@@ -845,28 +860,6 @@ export default function LoanDetail() {
       () => q(supabase.from('loans').update({ status, closed_on: status === 'closed' ? today : null }).eq('id', id)),
       'Status updated',
     );
-  }
-
-  async function deleteLoan() {
-    if (!window.confirm(`Delete loan #${l.loan_no} with ALL its ${disb.length + reps.length} entries? This cannot be undone.` + (renewedFrom ? `
-
-Old loan #${renewedFrom.loan_no} will become running again.` : '') + (duesCut.length ? `
-
-The old dues cut from this loan (${money(sum(duesCut, 'amount'))}) will be added back to those loans.` : '') + (cutElsewhere ? `
-
-This loan's dues were paid from another loan's cash — that cut is removed too (that loan's money still to give goes up).` : ''))) return;
-    const ok = await run(async () => {
-      await q(supabase.from('loans').delete().eq('id', id));
-      if (renewedFrom) {
-        // Undo the renewal: remove the adjustment on the old loan and put it back to running.
-        await q(
-          supabase.from('loan_repayments').delete()
-            .eq('loan_id', renewedFrom.id).eq('mode', 'renewal').eq('note', `Adjusted in new loan #${l.loan_no}`),
-        );
-        await q(supabase.rpc('recalc_loan_status', { p_loan: renewedFrom.id }));
-      }
-    }, renewedFrom ? `Loan deleted · Loan #${renewedFrom.loan_no} is running again` : 'Loan deleted');
-    if (ok) navigate('/loans');
   }
 
   return (
@@ -1184,11 +1177,22 @@ This loan's dues were paid from another loan's cash — that cut is removed too 
             {l.status !== 'active' && l.status !== 'renewed' && l.status !== 'defaulted' && <button className="btn" disabled={busy} onClick={() => setStatus('active')}>Re-open as active</button>}
             {isRunning && <Link className="btn" to={`/loans/new?renew=${id}`}>🔁 Renew · नया loan</Link>}
             {l.status !== 'cancelled' && l.status !== 'renewed' && <button className="btn btn-danger-outline" disabled={busy} onClick={() => setStatus('cancelled')}>Cancel loan</button>}
-            <button className="btn btn-danger" disabled={busy} onClick={deleteLoan}>Delete loan</button>
+            <button className="btn btn-danger" disabled={busy} onClick={() => setModal('delete')}>Delete loan</button>
           </div>
-          <p className="muted small">Loans close automatically when the full amount is collected. Deleting removes all its entries from every report.</p>
+          <p className="muted small">Loans close automatically when the full amount is collected. Deleting lets you keep its money in the Day Book or undo it as a mistake, and you can restore it later.</p>
         </Card>
       </div>
+
+      {modal === 'delete' && (
+        <DeleteLoanModal
+          loan={l}
+          renewedFrom={renewedFrom}
+          duesCut={duesCut}
+          cutElsewhere={cutElsewhere}
+          onClose={() => setModal(null)}
+          onDeleted={() => navigate('/loans')}
+        />
+      )}
 
       {modal === 'rep' && (
         <EntryModal
