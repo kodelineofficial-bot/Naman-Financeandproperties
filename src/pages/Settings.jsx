@@ -8,6 +8,8 @@ import { fmtDateLong, money, round2, toNum, todayStr } from '../lib/format.js';
 import { deriveLoan } from '../lib/loanMath.js';
 import { useAction } from '../lib/hooks.js';
 import { q, supabase } from '../lib/supabase.js';
+import { exportDays, exportRangeError, maxExportEnd } from '../lib/exportRange.js';
+import { XLSX_TYPE, downloadBytes } from '../lib/xlsx.js';
 
 export default function Settings() {
   const toast = useToast();
@@ -218,6 +220,8 @@ export default function Settings() {
         </div>
       </form>
 
+      <ExportCard />
+
       <Card title="Your login">
         <p className="muted">Signed in as <strong>{user?.email}</strong></p>
         <form onSubmit={changePassword} className="form-grid">
@@ -227,5 +231,64 @@ export default function Settings() {
         </form>
       </Card>
     </>
+  );
+}
+
+/** Export everything for a date range (1 day to 1 month) as one Excel file. */
+function ExportCard() {
+  const toast = useToast();
+  const today = todayStr();
+  const [from, setFrom] = useState(today.slice(0, 8) + '01');
+  const [to, setTo] = useState(today);
+  const [step, setStep] = useState('');
+  const err = exportRangeError(from, to, today);
+  const lastEnd = from ? (maxExportEnd(from) < today ? maxExportEnd(from) : today) : today;
+
+  function pickFrom(v) {
+    setFrom(v);
+    // keep the end inside the allowed month
+    if (v && (to < v || to > maxExportEnd(v))) setTo(maxExportEnd(v) < today ? maxExportEnd(v) : today);
+  }
+
+  async function exportNow() {
+    if (err) return toast.error(err);
+    try {
+      setStep('Starting…');
+      const { buildExport } = await import('../lib/exportData.js');
+      const { bytes, counts } = await buildExport(from, to, setStep);
+      downloadBytes(`khata-export_${from}_to_${to}.xlsx`, bytes, XLSX_TYPE);
+      toast.success(`Exported ${counts['Day Book']} Day Book entries, ${counts.Collections} collections, ${counts.Loans} loans`);
+    } catch (e) {
+      toast.error(e.message || String(e));
+    } finally {
+      setStep('');
+    }
+  }
+
+  return (
+    <Card title="Export data · डेटा डाउनलोड">
+      <div className="form-grid">
+        <Field label="From · से">
+          <input type="date" value={from} max={today} onChange={(e) => pickFrom(e.target.value)} />
+        </Field>
+        <Field label="To · तक" hint={from ? `Up to ${fmtDateLong(lastEnd)} (1 month at most)` : ''}>
+          <input type="date" value={to} min={from} max={lastEnd} onChange={(e) => setTo(e.target.value)} />
+        </Field>
+      </div>
+      {err ? <p className="small" style={{ color: 'var(--red)' }}>{err}</p> : (
+        <p className="muted small">{exportDays(from, to)} day{exportDays(from, to) === 1 ? '' : 's'}: {fmtDateLong(from)} → {fmtDateLong(to)}</p>
+      )}
+      <p className="muted small">
+        One Excel file (.xlsx) with a sheet for each part: Summary, Day Book (with tags), Daily Cash, Monthly, Collections,
+        Loan Payouts, Penalty, Loans, Borrowers, Expenses, Cash In-Out, Cash Counts, Salary, Staff Advances, Attendance,
+        Employees, Deleted Loans and Templates. Entries are the ones dated in these days; borrowers and employees are the full
+        list; loan balances and penalty are as of today. Nothing is changed — it only downloads.
+      </p>
+      <div className="btn-row">
+        <button type="button" className="btn btn-primary" disabled={!!err || !!step} onClick={exportNow}>
+          {step || '⬇ Export to Excel'}
+        </button>
+      </div>
+    </Card>
   );
 }
