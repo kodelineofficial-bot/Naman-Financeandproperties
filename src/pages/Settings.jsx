@@ -280,7 +280,7 @@ function ExportCard() {
       )}
       <p className="muted small">
         One Excel file (.xlsx) with a sheet for each part: Summary, Day Book (with tags), Daily Cash, Monthly, Collections,
-        Loan Payouts, Penalty, Loans, Borrowers, Expenses, Cash In-Out, Cash Counts, Salary, Staff Advances, Attendance,
+        Loan Payouts, Penalty, Loans (with stage), Borrowers (how many loans, running / behind / defaulter / closed, balance and penalty), Borrower Loans (every loan of every person and its stage), Expenses, Cash In-Out, Cash Counts, Salary, Staff Advances, Attendance,
         Employees, Deleted Loans and Templates. Entries are the ones dated in these days; borrowers and employees are the full
         list; loan balances and penalty are as of today. Nothing is changed — it only downloads.
       </p>

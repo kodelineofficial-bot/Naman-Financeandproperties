@@ -6,6 +6,7 @@ import { q, supabase } from './supabase.js';
 import { LEDGER_KINDS, addDays, modeLabel, toNum, todayStr } from './format.js';
 import { displayedLedgerAmount, withPayoutAmounts } from './ledgerAmounts.js';
 import { buildXlsx } from './xlsx.js';
+import { daysBehind, loanStage, loanStageLine } from './loanStage.js';
 import { exportDays } from './exportRange.js';
 
 const PAGE = 1000; // Supabase returns at most 1000 rows per request
@@ -65,14 +66,26 @@ export async function buildExport(from, to, onStep = () => {}) {
   const ledger = withPayoutAmounts(ledgerRows, payouts);
 
   onStep('Reading collections, payouts and penalty…');
-  const [repayments, disbursements, penalties, loans] = await Promise.all([
+  const [repayments, disbursements, penalties, summaries] = await Promise.all([
     fetchAll(inRange('loan_repayments', 'paid_on')),
     fetchAll(inRange('loan_disbursements', 'paid_on')),
     fetchAll(inRange('loan_penalty_entries', 'paid_on')),
-    // running at any time in the range: started by the end, not closed before the start
-    fetchAll(() => supabase.from('loan_summary').select('*').lte('loan_date', to)
-      .or(`closed_on.is.null,closed_on.gte.${from}`).order('loan_no').order('id')),
+    fetchAll(() => supabase.from('loan_summary').select('*').order('loan_no').order('id')),
   ]);
+  const today = todayStr();
+  // running at any time in the range: started by the end, not closed before the start
+  const loans = summaries.filter((l) => l.loan_date <= to && (!l.closed_on || l.closed_on >= from));
+  // every loan of every borrower (all time), grouped by borrower
+  const byBorrower = new Map();
+  for (const l of summaries) {
+    if (!byBorrower.has(l.borrower_id)) byBorrower.set(l.borrower_id, []);
+    byBorrower.get(l.borrower_id).push(l);
+  }
+  const of = (b) => byBorrower.get(b.id) || [];
+  const isRunning = (l) => l.status === 'active';
+  const total = (ls, k) => Math.round(ls.reduce((n, l) => n + toNum(l[k]), 0) * 100) / 100;
+  const borrowerLoans = [...summaries].sort((a, b) =>
+    String(a.borrower_name).localeCompare(String(b.borrower_name)) || toNum(a.loan_no) - toNum(b.loan_no));
 
   onStep('Reading expenses, cash and staff…');
   const [expenses, cashEntries, cashCounts, employees, salaries, advances, attendance, deletions, templates] = await Promise.all([
@@ -112,6 +125,13 @@ export async function buildExport(from, to, onStep = () => {}) {
     ['Penalty entries', penalties.length],
     ['Loans running in range', loans.length],
     ['Borrowers (all)', borrowers.length],
+    ['Loans now: running / behind or time over / defaulter / closed / renewed', [
+      summaries.filter(isRunning).length,
+      summaries.filter((l) => ['Behind', 'Time over'].includes(loanStage(l, today))).length,
+      summaries.filter((l) => l.status === 'defaulted').length,
+      summaries.filter((l) => l.status === 'closed').length,
+      summaries.filter((l) => l.status === 'renewed').length,
+    ].join(' / ')],
     ['Expenses', expenses.length],
     ['Cash in / out entries', cashEntries.length],
     ['Salary payments', salaries.length],
@@ -120,7 +140,7 @@ export async function buildExport(from, to, onStep = () => {}) {
     ['Loans deleted in range', deletions.length],
     ['Settings: interest % / extra % / daily per 10k', `${settings?.default_interest_pct} / ${settings?.default_markup_pct} / ${settings?.default_daily_per_10k}`],
     ['Settings: penalty', settings?.penalty_enabled ? `On · ₹${settings.penalty_per_day}/day from day ${toNum(settings.penalty_grace_days) + 2}` : 'Off'],
-    ['Note', 'Entries are the ones dated in this range. Borrowers, employees and templates are full lists. Loan figures (balance, overdue, penalty) are as of the day of export.'],
+    ['Note', 'Entries are the ones dated in this range. Borrowers, Borrower Loans, employees and templates are full lists (all time). Loan figures (stage, balance, overdue, penalty) are as of the day of export.'],
   ].map(([k, v]) => ({ k, v }));
 
   const sheets = [
@@ -235,6 +255,9 @@ export async function buildExport(from, to, onStep = () => {}) {
         col('Borrower', 'borrower_name', 28),
         col('Phone', 'borrower_phone', 14),
         col('Status', 'status', 10),
+        col('Stage', (r) => loanStage(r, today), 16),
+        col('% paid', (r) => num(r.progress_pct), 8),
+        col('Days behind', (r) => num(daysBehind(r)), 11),
         col('Loan date', 'loan_date', 12),
         col('Collection from', 'collection_start_date', 14),
         col('Frequency', 'frequency', 10),
@@ -277,10 +300,44 @@ export async function buildExport(from, to, onStep = () => {}) {
         col('ID proof', 'id_proof', 20),
         col('Guarantor', 'guarantor_name', 20),
         col('Guarantor phone', 'guarantor_phone', 15),
-        col('Loans (all time)', (r) => allLoans.filter((l) => l.borrower_id === r.id && !l.deleted_at).length, 15),
+        col('Loans (all time)', (r) => of(r).length, 15),
+        col('Running', (r) => of(r).filter(isRunning).length, 9),
+        col('Behind / time over', (r) => of(r).filter((l) => ['Behind', 'Time over'].includes(loanStage(l, today))).length, 17),
+        col('Defaulter', (r) => of(r).filter((l) => l.status === 'defaulted').length, 10),
+        col('Closed', (r) => of(r).filter((l) => l.status === 'closed').length, 8),
+        col('Renewed', (r) => of(r).filter((l) => l.status === 'renewed').length, 9),
+        col('Balance left (running + defaulter)', (r) => total(of(r).filter((l) => l.status === 'active' || l.status === 'defaulted'), 'outstanding'), 20),
+        col('Overdue', (r) => total(of(r).filter(isRunning), 'overdue')),
+        col('Penalty due', (r) => total(of(r), 'penalty_due'), 12),
+        col('Running loans · stage', (r) => of(r).filter((l) => l.status === 'active' || l.status === 'defaulted').map((l) => loanStageLine(l, today)).join('  |  '), 70),
         col('Photo', 'photo_url', 40),
         col('Notes', 'notes', 40),
         col('Added on', (r) => fmtDateTime(r.created_at), 20),
+      ],
+    },
+    {
+      name: 'Borrower Loans',
+      rows: borrowerLoans,
+      columns: [
+        col('Borrower', 'borrower_name', 26),
+        col('Phone', 'borrower_phone', 14),
+        col('Loan #', 'loan_no', 8),
+        col('Stage', (r) => loanStage(r, today), 16),
+        col('Loan date', 'loan_date', 12),
+        col('Principal', (r) => num(r.principal)),
+        col('Installment', (r) => num(r.daily_installment), 12),
+        col('Frequency', 'frequency', 10),
+        col('% paid', (r) => num(r.progress_pct), 8),
+        col('Collected', (r) => num(r.collected_total)),
+        col('Balance left', (r) => num(r.outstanding), 13),
+        col('Overdue', (r) => num(r.overdue)),
+        col('Days behind', (r) => num(daysBehind(r)), 11),
+        col('Paid till', 'paid_till', 12),
+        col('Last paid', 'last_paid_on', 12),
+        col('Expected end', 'expected_end_date', 13),
+        col('Penalty due', (r) => num(r.penalty_due), 12),
+        col('Renewed from #', (r) => loanNo(loanById.get(r.id)?.renewed_from), 14),
+        col('Closed on', 'closed_on', 12),
       ],
     },
     {

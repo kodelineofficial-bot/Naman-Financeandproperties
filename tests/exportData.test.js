@@ -49,3 +49,19 @@ test('xlsx file is a valid zip with numbers kept as numbers', (t) => {
   assert.doesNotMatch(s1, /r="A3"/); // empty cells are left out
   assert.match(readFileSync(join(dir, 'x/xl/workbook.xml'), 'utf8'), /name="Empty"/);
 });
+
+test('loan stage in plain words', async () => {
+  const { loanStage, daysBehind, loanStageLine } = await import('../src/lib/loanStage.js');
+  const today = '2026-11-11';
+  const run = { status: 'active', outstanding: 8880, overdue: 4560, daily_installment: 240, expected_end_date: '2026-11-29', progress_pct: 63, penalty_due: 3450, loan_no: 125, frequency: 'daily' };
+  assert.equal(loanStage(run, today), 'Behind');
+  assert.equal(daysBehind(run), 19);
+  assert.equal(loanStageLine(run, today), '#125 Behind · 63% paid · ₹8,880 left · overdue ₹4,560 (19 days) · penalty ₹3,450');
+  assert.equal(loanStage({ ...run, overdue: 0 }, today), 'On time');
+  assert.equal(loanStage({ ...run, expected_end_date: '2026-10-31' }, today), 'Time over');
+  assert.equal(loanStage({ ...run, outstanding: 0 }, today), 'Paid, not closed');
+  assert.equal(loanStage({ ...run, status: 'closed' }, today), 'Closed');
+  assert.equal(loanStage({ ...run, status: 'renewed' }, today), 'Renewed');
+  assert.equal(loanStage({ ...run, status: 'defaulted' }, today), 'Defaulter');
+  assert.equal(daysBehind({ overdue: 130, daily_installment: 120 }), 2);
+});
