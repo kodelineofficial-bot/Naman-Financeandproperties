@@ -55,6 +55,12 @@ function LoanTotalRow({ group, info }) {
       <td className="nowrap"><strong>Hisaab</strong></td>
       <td colSpan={3}>
         <strong>{group.party}</strong>
+        {many && line(`Total · कुल (upar ki ${group.rows.length} entries jodke)`, bookOut, 'amt-out')}
+        {many && advanceInBook > 0 && (
+          <div className="muted small loan-total-sub">
+            Isme {money(advanceInBook)} advance hai jo customer ko nahi gaya, wo Money in mein "Advance" se wapas aaya hai.
+          </div>
+        )}
         {line(
           formula
             ? `Kul dena hai (loan ${money(info.principal)} − byaj ${money(info.interest)} − advance ${money(info.advance)})`
@@ -71,7 +77,7 @@ function LoanTotalRow({ group, info }) {
         {left > 0
           ? line('Baki dena · बाकी देना', left, 'amt-out')
           : <div className="loan-total-line"><span>Baki dena</span><span className="muted">Pura de diya ✓</span></div>}
-        {advanceInBook > 0 && (
+        {!many && advanceInBook > 0 && (
           <div className="muted small loan-total-sub">
             Book mein bahar {money(bookOut)} likha hai, usme {money(advanceInBook)} advance hai jo customer ko nahi gaya,
             wo Money in mein "Advance" se wapas aaya hai.
