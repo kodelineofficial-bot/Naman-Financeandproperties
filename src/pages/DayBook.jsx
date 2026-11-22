@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useToast } from '../components/Toast.jsx';
 import { Amount, Card, Empty, ErrorBox, ExportButton, Field, Loading, Modal, PageHeader, PrintButton, Stat } from '../components/ui.jsx';
@@ -19,7 +19,81 @@ const LINK_FOR = {
   employee_advance: (r) => `/employees/${r.ref_id}`,
 };
 
-function LedgerTable({ rows, onDelete }) {
+/**
+ * Rows of one loan's payout stay together, and after them comes a line with the loan's total
+ * for the day (when it has more than one row) and how much of the loan is still left to give.
+ */
+function groupByLoan(rows) {
+  const out = [];
+  const groups = new Map();
+  for (const r of rows) {
+    if (r.kind !== 'disbursement' || !r.ref_id) { out.push({ row: r }); continue; }
+    let g = groups.get(r.ref_id);
+    if (!g) { g = { loanId: r.ref_id, party: r.party, rows: [] }; groups.set(r.ref_id, g); out.push({ group: g }); }
+    g.rows.push(r);
+  }
+  return out;
+}
+
+function LoanTotalRow({ group, info }) {
+  const many = group.rows.length > 1;
+  const left = info ? round2(toNum(info.net_disbursable) - toNum(info.givenUpto)) : null;
+  if (!many && !(left > 0)) return null;
+  const total = sum(group.rows, displayedLedgerAmount);
+  const adjusted = sum(group.rows.filter((r) => r.mode === 'renewal'), 'amount');
+  const cash = round2(total - adjusted);
+  return (
+    <tr className="loan-total-row">
+      <td className="nowrap"><strong>{many ? 'Total' : ''}</strong></td>
+      <td colSpan={2}>
+        <strong>{group.party}</strong>
+        {many && adjusted > 0 && (
+          <div className="muted small">Cash / UPI {money(cash)} · Adjusted (no cash) {money(adjusted)}</div>
+        )}
+        {info && (
+          <div className="small">
+            Given till this day {money(info.givenUpto)} of {money(info.net_disbursable)} ·{' '}
+            {left > 0
+              ? <strong className="amt-out">Left to give · बाकी देना {money(left)}</strong>
+              : <span className="muted">Fully given</span>}
+          </div>
+        )}
+      </td>
+      <td className="num">{many ? <strong><Amount value={total} dir="out" /></strong> : null}</td>
+      <td className="no-print" />
+    </tr>
+  );
+}
+
+function LedgerRow({ r, onDelete }) {
+  const link = LINK_FOR[r.kind]?.(r);
+  return (
+    <tr>
+      <td className="nowrap">{LEDGER_KINDS[r.kind]?.short || r.kind}</td>
+      <td>
+        {link && r.ref_id ? <Link to={link}>{r.party}</Link> : r.party}
+        {r.note && <div className="muted small">{r.note}</div>}
+      </td>
+      <td>{modeLabel(r.mode)}</td>
+      <td className={`num ${isUpi(r) ? 'muted' : ''}`}>
+        {isUpi(r) ? money(displayedLedgerAmount(r)) : <Amount value={displayedLedgerAmount(r)} dir={r.direction} />}
+        {!isUpi(r) && r.advance_included > 0 && (
+          <div className="muted small">
+            Includes {money(r.advance_included)} advance<br />Handed over {money(r.handed_over)}
+          </div>
+        )}
+      </td>
+      <td className="num no-print">
+        {/* Advance kept and overdue cuts are part of the loan itself — change them from the loan, not here. */}
+        {!['loan_advance', 'loan_advance_cut'].includes(r.kind) && r.mode !== 'renewal' && (
+          <button className="icon-btn danger" title="Delete entry" onClick={() => onDelete(r)}>🗑</button>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function LedgerTable({ rows, onDelete, loanInfo }) {
   if (!rows.length) return <Empty>No entries.</Empty>;
   return (
     <div className="table-wrap">
@@ -28,33 +102,14 @@ function LedgerTable({ rows, onDelete }) {
           <tr><th>Type</th><th>Party / Details</th><th>Mode</th><th className="num">Amount</th><th /></tr>
         </thead>
         <tbody>
-          {rows.map((r) => {
-            const link = LINK_FOR[r.kind]?.(r);
-            return (
-              <tr key={r.kind + r.id}>
-                <td className="nowrap">{LEDGER_KINDS[r.kind]?.short || r.kind}</td>
-                <td>
-                  {link && r.ref_id ? <Link to={link}>{r.party}</Link> : r.party}
-                  {r.note && <div className="muted small">{r.note}</div>}
-                </td>
-                <td>{modeLabel(r.mode)}</td>
-                <td className={`num ${isUpi(r) ? 'muted' : ''}`}>
-                  {isUpi(r) ? money(displayedLedgerAmount(r)) : <Amount value={displayedLedgerAmount(r)} dir={r.direction} />}
-                  {!isUpi(r) && r.advance_included > 0 && (
-                    <div className="muted small">
-                      Includes {money(r.advance_included)} advance<br />Handed over {money(r.handed_over)}
-                    </div>
-                  )}
-                </td>
-                <td className="num no-print">
-                  {/* Advance kept and overdue cuts are part of the loan itself — change them from the loan, not here. */}
-                  {!['loan_advance', 'loan_advance_cut'].includes(r.kind) && r.mode !== 'renewal' && (
-                    <button className="icon-btn danger" title="Delete entry" onClick={() => onDelete(r)}>🗑</button>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
+          {groupByLoan(rows).map((item) => (item.row ? (
+            <LedgerRow key={item.row.kind + item.row.id} r={item.row} onDelete={onDelete} />
+          ) : (
+            <Fragment key={'loan' + item.group.loanId}>
+              {item.group.rows.map((r) => <LedgerRow key={r.kind + r.id} r={r} onDelete={onDelete} />)}
+              <LoanTotalRow group={item.group} info={loanInfo?.[item.group.loanId]} />
+            </Fragment>
+          )))}
         </tbody>
       </table>
     </div>
@@ -195,7 +250,20 @@ export default function DayBook() {
       (l) => toNum(l.paid_on_date) === 0 && toNum(l.balance_upto) > 0 &&
         (l.frequency === 'monthly' ? toNum(l.short_upto) > 0 : !l.paid_till || l.paid_till < date),
     );
+    // For each loan paid out this day: what it should get in all, and what it got up to this day.
+    const loanIds = [...new Set(entries.filter((e) => e.kind === 'disbursement' && e.ref_id).map((e) => e.ref_id))];
+    const loanInfo = {};
+    if (loanIds.length) {
+      const [loans, given] = await Promise.all([
+        q(supabase.from('loan_summary').select('id,net_disbursable').in('id', loanIds)),
+        q(supabase.from('loan_disbursements').select('loan_id,amount').in('loan_id', loanIds).lte('paid_on', date).limit(5000)),
+      ]);
+      for (const l of loans) {
+        loanInfo[l.id] = { net_disbursable: toNum(l.net_disbursable), givenUpto: sum(given.filter((g) => g.loan_id === l.id), 'amount') };
+      }
+    }
     return {
+      loanInfo,
       opening: openingDetail.opening, openingDetail, entries,
       newLoans: newLoans.map((l) => ({ ...l, ...loanMoneyOnDate(entries, l.id) })), missed,
     };
@@ -300,7 +368,7 @@ export default function DayBook() {
               <LedgerTable rows={ins} onDelete={busy ? () => {} : onDelete} />
             </Card>
             <Card title={`Money out · नाम (${outs.length})`} flush actions={<strong className="amt-out">Book total {money(totalOut)}</strong>}>
-              <LedgerTable rows={outs} onDelete={busy ? () => {} : onDelete} />
+              <LedgerTable rows={outs} onDelete={busy ? () => {} : onDelete} loanInfo={data.loanInfo} />
             </Card>
           </div>
 
