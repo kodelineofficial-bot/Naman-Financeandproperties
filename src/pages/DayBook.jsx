@@ -37,29 +37,47 @@ function groupByLoan(rows) {
 
 function LoanTotalRow({ group, info }) {
   const many = group.rows.length > 1;
-  const left = info ? round2(toNum(info.net_disbursable) - toNum(info.givenUpto)) : null;
+  if (!info) return null;
+  const left = round2(info.net_disbursable - info.givenUpto);
   if (!many && !(left > 0)) return null;
-  const total = sum(group.rows, displayedLedgerAmount);
-  const adjusted = sum(group.rows.filter((r) => r.mode === 'renewal'), 'amount');
-  const cash = round2(total - adjusted);
+  const givenToday = info.givenToday;
+  const givenBefore = round2(info.givenUpto - givenToday);
+  const inHand = round2(sum(group.rows.filter((r) => r.mode !== 'renewal'), (r) => r.handed_over ?? r.amount));
+  const cutToday = round2(givenToday - inHand);
+  const bookOut = sum(group.rows, displayedLedgerAmount);
+  const advanceInBook = round2(bookOut - givenToday);
+  const formula = round2(info.principal - info.interest - info.advance) === info.net_disbursable;
+  const line = (label, value, cls = '') => (
+    <div className="loan-total-line"><span>{label}</span><strong className={cls}>{money(value)}</strong></div>
+  );
   return (
     <tr className="loan-total-row">
-      <td className="nowrap"><strong>{many ? 'Total' : ''}</strong></td>
-      <td colSpan={2}>
+      <td className="nowrap"><strong>Hisaab</strong></td>
+      <td colSpan={3}>
         <strong>{group.party}</strong>
-        {many && adjusted > 0 && (
-          <div className="muted small">Cash / UPI {money(cash)} · Adjusted (no cash) {money(adjusted)}</div>
+        {line(
+          formula
+            ? `Kul dena hai (loan ${money(info.principal)} − byaj ${money(info.interest)} − advance ${money(info.advance)})`
+            : 'Kul dena hai',
+          info.net_disbursable,
         )}
-        {info && (
-          <div className="small">
-            Given till this day {money(info.givenUpto)} of {money(info.net_disbursable)} ·{' '}
-            {left > 0
-              ? <strong className="amt-out">Left to give · बाकी देना {money(left)}</strong>
-              : <span className="muted">Fully given</span>}
+        {givenBefore > 0 && line('Pehle diya (pichle dino mein)', givenBefore)}
+        {line('Aaj diya', givenToday)}
+        {inHand > 0 && cutToday > 0 && (
+          <div className="muted small loan-total-sub">
+            Haath mein (cash / UPI) {money(inHand)} + purane dues mein kata (cash nahi gaya) {money(cutToday)}
+          </div>
+        )}
+        {left > 0
+          ? line('Baki dena · बाकी देना', left, 'amt-out')
+          : <div className="loan-total-line"><span>Baki dena</span><span className="muted">Pura de diya ✓</span></div>}
+        {advanceInBook > 0 && (
+          <div className="muted small loan-total-sub">
+            Book mein bahar {money(bookOut)} likha hai, usme {money(advanceInBook)} advance hai jo customer ko nahi gaya,
+            wo Money in mein "Advance" se wapas aaya hai.
           </div>
         )}
       </td>
-      <td className="num">{many ? <strong><Amount value={total} dir="out" /></strong> : null}</td>
       <td className="no-print" />
     </tr>
   );
@@ -255,11 +273,16 @@ export default function DayBook() {
     const loanInfo = {};
     if (loanIds.length) {
       const [loans, given] = await Promise.all([
-        q(supabase.from('loan_summary').select('id,net_disbursable').in('id', loanIds)),
-        q(supabase.from('loan_disbursements').select('loan_id,amount').in('loan_id', loanIds).lte('paid_on', date).limit(5000)),
+        q(supabase.from('loan_summary').select('id,net_disbursable,principal,interest_amount,advance_amount').in('id', loanIds)),
+        q(supabase.from('loan_disbursements').select('loan_id,amount,paid_on').in('loan_id', loanIds).lte('paid_on', date).limit(5000)),
       ]);
       for (const l of loans) {
-        loanInfo[l.id] = { net_disbursable: toNum(l.net_disbursable), givenUpto: sum(given.filter((g) => g.loan_id === l.id), 'amount') };
+        const mine = given.filter((g) => g.loan_id === l.id);
+        loanInfo[l.id] = {
+          net_disbursable: toNum(l.net_disbursable), principal: toNum(l.principal),
+          interest: toNum(l.interest_amount), advance: toNum(l.advance_amount),
+          givenUpto: sum(mine, 'amount'), givenToday: sum(mine.filter((g) => g.paid_on === date), 'amount'),
+        };
       }
     }
     return {

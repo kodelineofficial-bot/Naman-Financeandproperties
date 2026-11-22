@@ -205,6 +205,8 @@ kbd { border: 1px solid var(--line-strong); border-bottom-width: 2px; padding: 0
 .table .num { text-align: right; }
 .table tfoot td { font-weight: 700; background: #f8f1e4; border-top: 2px solid var(--line-strong); }
 .table tr.loan-total-row td { background: #f8f1e4; border-top: 1px dashed var(--line-strong); border-bottom: 2px solid var(--line-strong); }
+.loan-total-line { display: flex; justify-content: space-between; gap: 12px; margin-top: 4px; }
+.loan-total-sub { margin: 2px 0 0 12px; }
 .table-dense td, .table-dense th { padding: 7px 10px; font-size: 13px; }
 .row-done { background: #f3faf5; }
 .row-empty td { opacity: 0.55; }
