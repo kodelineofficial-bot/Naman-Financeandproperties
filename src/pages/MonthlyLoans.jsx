@@ -24,6 +24,8 @@ export default function MonthlyLoans() {
   const toast = useToast();
   const today = todayStr();
   const [month, setMonth] = useState(monthStart(today));
+  // All time: every monthly loan ever made (old, running, starting later), figures as of this month.
+  const [allTime, setAllTime] = useState(false);
   const [payDate, setPayDate] = useState(today);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('pending');
@@ -31,19 +33,19 @@ export default function MonthlyLoans() {
   const [modes, setModes] = useState({});
   const [busy, run] = useAction(toast);
 
-  const mStart = month;
-  const mEnd = monthEnd(month);
+  const mStart = allTime ? monthStart(today) : month;
+  const mEnd = monthEnd(mStart);
 
   const { data, loading, error } = useLoad(async () => {
-    const loans = await q(
-      supabase.from('loan_summary').select('*').eq('frequency', 'monthly').lte('loan_date', mEnd),
-    );
+    let query = supabase.from('loan_summary').select('*').eq('frequency', 'monthly');
+    if (!allTime) query = query.lte('loan_date', mEnd);
+    const loans = await q(query);
     const ids = loans.map((l) => l.id);
     const reps = ids.length
       ? await q(supabase.from('loan_repayments').select('loan_id,paid_on,amount,mode,adjusted_into').in('loan_id', ids))
       : [];
     return { loans, reps };
-  }, [mEnd]);
+  }, [mEnd, allTime]);
 
   const all = useMemo(() => {
     if (!data) return [];
@@ -81,9 +83,9 @@ export default function MonthlyLoans() {
         else state = 'pending';
         return { ...l, inst, due, carried, paidInMonth, left, balance, dueDateInMonth, state, running };
       })
-      .filter((l) => l.running || l.paidInMonth > 0)
+      .filter((l) => allTime || l.running || l.paidInMonth > 0)
       .sort((a, b) => a.borrower_name.localeCompare(b.borrower_name) || a.loan_no - b.loan_no);
-  }, [data, mStart, mEnd, today]);
+  }, [data, mStart, mEnd, today, allTime]);
 
   const counts = {
     pending: all.filter((l) => ['pending', 'partial', 'upcoming'].includes(l.state)).length,
@@ -129,15 +131,30 @@ export default function MonthlyLoans() {
 
   return (
     <>
-      <PageHeader title="Monthly Loans" hindi="मासिक किस्त" subtitle={`${fmtMonth(month)} — installment due this month + anything short from earlier months`}>
+      <PageHeader
+        title="Monthly Loans"
+        hindi="मासिक किस्त"
+        subtitle={
+          allTime
+            ? `All time — every monthly loan, old to upcoming; due / paid figures are for ${fmtMonth(mStart)}`
+            : `${fmtMonth(month)} — installment due this month + anything short from earlier months`
+        }
+      >
         <div className="date-nav">
-          <button className="btn" onClick={() => setMonth(addMonths(month, -1))}>‹ Prev</button>
-          <input type="month" value={month.slice(0, 7)} onChange={(e) => e.target.value && setMonth(`${e.target.value}-01`)} />
-          <button className="btn" onClick={() => setMonth(addMonths(month, 1))}>Next ›</button>
-          {month !== thisMonth && <button className="btn btn-primary" onClick={() => setMonth(thisMonth)}>This month</button>}
+          {!allTime && (
+            <>
+              <button className="btn" onClick={() => setMonth(addMonths(month, -1))}>‹ Prev</button>
+              <input type="month" value={month.slice(0, 7)} onChange={(e) => e.target.value && setMonth(`${e.target.value}-01`)} />
+              <button className="btn" onClick={() => setMonth(addMonths(month, 1))}>Next ›</button>
+              {month !== thisMonth && <button className="btn btn-primary" onClick={() => setMonth(thisMonth)}>This month</button>}
+            </>
+          )}
+          <button className={`btn${allTime ? ' btn-primary' : ''}`} onClick={() => setAllTime((v) => !v)}>
+            {allTime ? '✓ All time · सब महीने' : 'All time · सब महीने'}
+          </button>
         </div>
         <ExportButton
-          filename={`monthly-loans-${month.slice(0, 7)}.csv`}
+          filename={allTime ? 'monthly-loans-all-time.csv' : `monthly-loans-${month.slice(0, 7)}.csv`}
           rows={rows}
           columns={[
             { label: 'Loan #', key: 'loan_no' }, { label: 'Name', key: 'borrower_name' }, { label: 'Phone', key: 'borrower_phone' },
