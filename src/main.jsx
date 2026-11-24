@@ -5,6 +5,10 @@ import App from './App.jsx';
 import { AuthProvider } from './context/AuthContext.jsx';
 import { ToastProvider } from './components/Toast.jsx';
 import './styles.css';
+import { startTableLabels } from './lib/tableLabels.js';
+
+// Phone view: every table cell gets its column name (tables show as cards there).
+startTableLabels();
 
 // Scrolling the page over a number box must not change the number (₹ amounts, days…).
 document.addEventListener(

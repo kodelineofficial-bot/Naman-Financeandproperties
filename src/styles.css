@@ -462,6 +462,88 @@ button.hbar:hover, .hbar.active { background: #f6efe1; }
   .hbar { grid-template-columns: 90px 1fr auto; }
 }
 
+/* ---------- Phone: shell, header, controls ---------- */
+@media screen and (max-width: 600px) {
+  body { font-size: 15px; }
+  .content { padding: 12px 12px 40px; }
+  .topbar { padding: 8px 12px; }
+  .balance-pill { padding: 5px 10px; }
+  .page-header { align-items: stretch; gap: 10px; margin-bottom: 14px; }
+  .page-header > div:first-child { min-width: 0; }
+  .page-header h1 { font-size: 21px; }
+  .page-actions { width: 100%; }
+  .page-actions > .btn, .page-actions > a.btn { flex: 1 1 auto; }
+  .date-nav { flex-wrap: wrap; width: 100%; }
+  .date-nav input { flex: 1 1 140px; }
+  .btn { padding: 9px 12px; }
+  /* 16px stops iPhone from zooming in when a box is tapped. */
+  input, select, textarea { font-size: 16px; }
+  .card-head { padding: 10px 12px; }
+  .card-body { padding: 12px; }
+  .card-actions > * { flex: 1 1 auto; }
+  .card-actions label { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .tabs { flex-wrap: nowrap; overflow-x: auto; width: 100%; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
+  .tab { padding: 7px 10px; white-space: nowrap; flex-shrink: 0; }
+  .segmented { display: flex; overflow-x: auto; max-width: 100%; }
+  .segmented button { white-space: nowrap; }
+  .filters { gap: 8px; }
+  .filters > * { flex: 1 1 auto; }
+  .form-actions { flex-wrap: wrap; }
+  .form-actions .btn { flex: 1 1 auto; }
+  .chip { min-width: 0; flex: 1 1 140px; }
+  .kv-list > div { flex-wrap: wrap; }
+  .modal-backdrop { padding: 0; place-items: stretch; }
+  .modal, .modal-wide, .modal-full { max-width: none; max-height: 100vh; height: 100%; border-radius: 0; }
+  .modal-body { padding: 14px 12px; }
+  .big-table .table { font-size: 15px; }
+  .toasts { left: 12px; right: 12px; bottom: 12px; }
+  .toast { max-width: none; }
+  .cal-day { min-height: 40px; }
+  .cal-amt { font-size: 9.5px; }
+}
+
+/* ---------- Phone tables: each row becomes a card ----------
+   Every cell shows its column name (data-label, filled in by lib/tableLabels.js).
+   The attendance sheet stays a wide grid; add .no-stack to keep any other table wide. */
+@media screen and (max-width: 600px) {
+  .table-wrap:has(> .table:not(.att-sheet):not(.no-stack)) { overflow-x: visible; }
+  .table:not(.att-sheet):not(.no-stack) thead { display: none; }
+  .table:not(.att-sheet):not(.no-stack),
+  .table:not(.att-sheet):not(.no-stack) tbody,
+  .table:not(.att-sheet):not(.no-stack) tfoot,
+  .table:not(.att-sheet):not(.no-stack) tr { display: block; width: 100%; }
+  .table:not(.att-sheet):not(.no-stack) tr { padding: 10px 12px; border-bottom: 1px solid var(--line-strong); }
+  .table:not(.att-sheet):not(.no-stack) tbody tr:hover { background: inherit; }
+  .table:not(.att-sheet):not(.no-stack) td {
+    display: block; position: relative; border: none; padding: 4px 0 4px 44%; min-height: 26px;
+    text-align: right; overflow-wrap: anywhere;
+  }
+  .table:not(.att-sheet):not(.no-stack) td::before {
+    content: attr(data-label); position: absolute; left: 0; top: 5px; width: 42%;
+    text-align: left; font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.03em;
+    overflow-wrap: anywhere;
+  }
+  .table:not(.att-sheet):not(.no-stack) td:empty { display: none; }
+  /* First cell (usually the name / date) is the card's title, full width. */
+  .table:not(.att-sheet):not(.no-stack) td:first-child,
+  .table:not(.att-sheet):not(.no-stack) td[data-label=''],
+  .table:not(.att-sheet):not(.no-stack) td:not([data-label]) { padding-left: 0; text-align: left; }
+  .table:not(.att-sheet):not(.no-stack) td:first-child::before,
+  .table:not(.att-sheet):not(.no-stack) td[data-label='']::before,
+  .table:not(.att-sheet):not(.no-stack) td:not([data-label])::before { display: none; }
+  .table:not(.att-sheet):not(.no-stack) td:first-child { font-size: 15.5px; margin-bottom: 2px; }
+  .table:not(.att-sheet):not(.no-stack) tfoot tr { background: #f8f1e4; }
+  .table:not(.att-sheet):not(.no-stack) tfoot td { border: none; background: transparent; }
+  .table tr.loan-total-row td { border: none; }
+  .table .amount-cell { justify-content: flex-end; }
+  .table td .btn, .table td .btn-row { margin-top: 4px; }
+  .table td select { max-width: 100%; }
+  .table td.nowrap { white-space: normal; }
+  .table:not(.att-sheet):not(.no-stack).collect-table td:last-child:not(:empty) { padding-left: 0; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .table:not(.att-sheet):not(.no-stack).collect-table td:last-child::before { display: none; }
+  .collect-table td:last-child .btn { flex: 1 1 auto; margin-top: 4px; }
+}
+
 /* ---------- Print ---------- */
 @media print {
   .sidebar, .topbar, .page-actions, .no-print, .icon-btn, .btn, .toasts, .scrim { display: none !important; }
