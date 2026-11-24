@@ -19,32 +19,45 @@ const LINK_FOR = {
   employee_advance: (r) => `/employees/${r.ref_id}`,
 };
 
+/** "Loan #394 — BABITA RAJPURA" → "BABITA RAJPURA", so one person's loans add up together. */
+const personName = (party) => party.replace(/^Loan\s*#\d+\s*[—–-]\s*/i, '').trim();
+
 /**
- * Loan payout rows of one person stay together, and after them comes one line with the
- * person's name, how many entries and their sum — plain addition of the amounts shown
- * above it (advance included if it is in a row), so nobody has to add them by hand.
+ * Loan payout rows of one person (payout, dues cut, advance cut) stay together, and after
+ * them comes one line with the person's name, how many entries, each amount and their sum —
+ * plain addition of the amounts shown above, so nobody has to add them by hand.
  */
 function groupByPerson(rows) {
   const out = [];
   const groups = new Map();
   for (const r of rows) {
-    if (r.kind !== 'disbursement' || !r.party) { out.push({ row: r }); continue; }
-    const key = r.party.trim().toUpperCase();
+    if (!['disbursement', 'loan_advance_cut'].includes(r.kind) || !r.party) { out.push({ row: r }); continue; }
+    const name = personName(r.party);
+    const key = name.toUpperCase();
     let g = groups.get(key);
-    if (!g) { g = { key, party: r.party, rows: [] }; groups.set(key, g); out.push({ group: g }); }
+    if (!g) { g = { key, name, rows: [] }; groups.set(key, g); out.push({ group: g }); }
     g.rows.push(r);
   }
   return out;
 }
 
+const partTag = (r) => (r.kind === 'loan_advance_cut' ? ' advance' : r.mode === 'renewal' ? ' kata' : '');
+
 function PersonTotalRow({ group }) {
   const n = group.rows.length;
+  const total = sum(group.rows, displayedLedgerAmount);
   return (
     <tr className="loan-total-row">
       <td className="nowrap"><strong>Total · कुल</strong></td>
-      <td><strong>{group.party}</strong> <span className="muted small">· {n} {n === 1 ? 'entry' : 'entries'}</span></td>
-      <td />
-      <td className="num"><strong className="amt-out">{money(sum(group.rows, displayedLedgerAmount))}</strong></td>
+      <td colSpan={2}>
+        <strong>{group.name}</strong> <span className="muted small">· {n} {n === 1 ? 'entry' : 'entries'}</span>
+        {n > 1 && (
+          <div className="muted small">
+            {group.rows.map((r) => `${money(displayedLedgerAmount(r))}${partTag(r)}`).join(' + ')} = {money(total)}
+          </div>
+        )}
+      </td>
+      <td className="num"><strong className="amt-out">{money(total)}</strong></td>
       <td className="no-print" />
     </tr>
   );
