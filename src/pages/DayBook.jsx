@@ -20,8 +20,9 @@ const LINK_FOR = {
 };
 
 /**
- * Rows of one loan's payout stay together, and after them comes a line with the loan's total
- * for the day (when it has more than one row) and how much of the loan is still left to give.
+ * Rows of one loan's payout stay together, and after them comes a Hisaab line for every loan:
+ * the day's total (when it has more than one row), what was to be given, given before / today,
+ * and how much is still left to give (or "Pura de diya ✓").
  */
 function groupByLoan(rows) {
   const out = [];
@@ -39,7 +40,6 @@ function LoanTotalRow({ group, info }) {
   const many = group.rows.length > 1;
   if (!info) return null;
   const left = round2(info.net_disbursable - info.givenUpto);
-  if (!many && !(left > 0)) return null;
   const givenToday = info.givenToday;
   const givenBefore = round2(info.givenUpto - givenToday);
   const inHand = round2(sum(group.rows.filter((r) => r.mode !== 'renewal'), (r) => r.handed_over ?? r.amount));
