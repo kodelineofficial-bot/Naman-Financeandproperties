@@ -158,6 +158,7 @@ export default function MonthlyLoans() {
           rows={rows}
           columns={[
             { label: 'Loan #', key: 'loan_no' }, { label: 'Name', key: 'borrower_name' }, { label: 'Phone', key: 'borrower_phone' },
+            { label: 'Loan amount', value: (l) => toNum(l.principal) }, { label: 'Total to take', value: (l) => toNum(l.total_repayable) },
             { label: 'Monthly installment', key: 'inst' }, { label: 'Due date', key: 'dueDateInMonth' },
             { label: 'Carried from before', key: 'carried' }, { label: 'Due this month', key: 'due' },
             { label: 'Paid this month', key: 'paidInMonth' }, { label: 'Still due', key: 'left' },
@@ -172,7 +173,11 @@ export default function MonthlyLoans() {
         <Stat label="To collect this month · लेना" value={money(toCollect)} hint={`${all.filter((l) => l.due > 0).length} loans`} />
         <Stat label="Collected · मिला" value={money(collected)} tone="green" hint={`${counts.paid} fully paid`} />
         <Stat label="Still to collect · बाकी" value={money(stillDue)} tone={stillDue > 0 ? 'red' : undefined} hint={`${counts.pending} not fully paid`} />
-        <Stat label="Monthly loans running" value={all.filter((l) => ['active', 'defaulted'].includes(l.status)).length} hint={`Balance ${money(sum(all, 'balance'))}`} />
+        <Stat
+          label="Monthly loans running"
+          value={all.filter((l) => ['active', 'defaulted'].includes(l.status)).length}
+          hint={`Loans ${money(sum(all.filter((l) => ['active', 'defaulted'].includes(l.status)), 'principal'))} · Balance ${money(sum(all, 'balance'))}`}
+        />
       </div>
 
       <Card
@@ -235,6 +240,9 @@ export default function MonthlyLoans() {
                         <Link to={`/loans/${l.id}`}><strong className="big-name">{l.borrower_name}</strong></Link>
                         <div className="muted small">
                           #{l.loan_no} · {l.borrower_phone || '—'} · {money(l.inst)}/month
+                        </div>
+                        <div className="muted small">
+                          Loan {money(l.principal)} · Total to take {money(l.total_repayable)}
                           {l.status === 'defaulted' && <span className="badge badge-red ml">Defaulted</span>}
                         </div>
                       </td>
@@ -254,6 +262,7 @@ export default function MonthlyLoans() {
                       </td>
                       <td className="num">
                         <strong>{money(l.due)}</strong>
+                        {l.state === 'later' && <div className="small muted">1st installment {money(l.inst)}</div>}
                         {l.carried > 0 && <div className="small amt-out">incl. {money(l.carried)} from before</div>}
                         {toNum(l.penalty_due) > 0 && <div className="pen-note">+ {money(l.penalty_due)} penalty</div>}
                       </td>
