@@ -16,6 +16,9 @@ import { q, supabase } from '../lib/supabase.js';
  * Due this month = everything due up to this month's installment − what came before
  * the month, so a short month carries forward: ₹10,000/month, ₹8,000 paid in March
  * → ₹12,000 due in April, and ₹22,000 in May if April is missed too.
+ *
+ * Loans whose first installment falls after this month are still listed (tab
+ * “Starts later”) so every running monthly loan can be seen from any month.
  */
 export default function MonthlyLoans() {
   const toast = useToast();
@@ -33,7 +36,7 @@ export default function MonthlyLoans() {
 
   const { data, loading, error } = useLoad(async () => {
     const loans = await q(
-      supabase.from('loan_summary').select('*').eq('frequency', 'monthly').lte('collection_start_date', mEnd).lte('loan_date', mEnd),
+      supabase.from('loan_summary').select('*').eq('frequency', 'monthly').lte('loan_date', mEnd),
     );
     const ids = loans.map((l) => l.id);
     const reps = ids.length
@@ -67,8 +70,10 @@ export default function MonthlyLoans() {
         const left = Math.max(0, round2(due - paidInMonth));
         const balance = Math.max(0, round2(toCollect - upToEnd));
         const running = ['active', 'defaulted'].includes(l.status) || (l.closed_on && l.closed_on >= mStart);
+        const startsLater = l.collection_start_date > mEnd;
         let state;
-        if (balanceBefore <= 0 && paidInMonth <= 0) state = 'done';
+        if (startsLater && paidInMonth <= 0) state = 'later';
+        else if (balanceBefore <= 0 && paidInMonth <= 0) state = 'done';
         else if (due <= 0) state = paidInMonth > 0 ? 'paid' : 'advance';
         else if (left <= 0) state = 'paid';
         else if (paidInMonth > 0) state = 'partial';
@@ -84,6 +89,7 @@ export default function MonthlyLoans() {
     pending: all.filter((l) => ['pending', 'partial', 'upcoming'].includes(l.state)).length,
     paid: all.filter((l) => l.state === 'paid').length,
     advance: all.filter((l) => l.state === 'advance' || l.state === 'done').length,
+    later: all.filter((l) => l.state === 'later').length,
     all: all.length,
   };
 
@@ -162,6 +168,7 @@ export default function MonthlyLoans() {
               { value: 'pending', label: 'Due · बाकी', count: counts.pending },
               { value: 'paid', label: 'Paid · दिया', count: counts.paid },
               { value: 'advance', label: 'Advance / done', count: counts.advance },
+              { value: 'later', label: 'Starts later · बाद में', count: counts.later },
               { value: 'all', label: 'All · सब', count: counts.all },
             ]}
           />
@@ -183,7 +190,7 @@ export default function MonthlyLoans() {
           <Empty>
             {all.length === 0 ? (
               <>No monthly loans yet. <Link to="/loans/new">Create one →</Link> and pick “Monthly loan”.</>
-            ) : filter === 'pending' ? 'Everyone has paid this month 🎉' : 'Nobody here.'}
+            ) : filter === 'pending' ? 'Everyone has paid this month 🎉' : filter === 'later' ? 'No loan starts after this month.' : 'Nobody here.'}
           </Empty>
         ) : (
           <div className="table-wrap">
@@ -215,7 +222,9 @@ export default function MonthlyLoans() {
                         </div>
                       </td>
                       <td className="nowrap">
-                        {l.dueDateInMonth ? fmtDateLong(l.dueDateInMonth) : <span className="muted">No installment</span>}
+                        {l.state === 'later' ? (
+                          <span className="muted">1st installment {fmtDateLong(l.collection_start_date)}</span>
+                        ) : l.dueDateInMonth ? fmtDateLong(l.dueDateInMonth) : <span className="muted">No installment</span>}
                         <div>
                           {l.state === 'paid' && <span className="pill pill-green">✓ Paid</span>}
                           {l.state === 'partial' && <span className="pill pill-red">Part paid</span>}
@@ -223,6 +232,7 @@ export default function MonthlyLoans() {
                           {l.state === 'upcoming' && <span className="pill pill-blue">Coming</span>}
                           {l.state === 'advance' && <span className="pill pill-blue">✓ Advance</span>}
                           {l.state === 'done' && <span className="pill pill-green">Fully paid</span>}
+                          {l.state === 'later' && <span className="pill pill-blue">Starts later</span>}
                         </div>
                       </td>
                       <td className="num">
@@ -277,6 +287,7 @@ export default function MonthlyLoans() {
         <strong>How it works · कैसे:</strong> Each monthly loan has one installment every month on the same date. The amount is
         filled with what is still due this month — if someone paid less last month, the short part is added here. Payments are saved
         with the <strong>Payment date</strong> above (today by default). Use <strong>+</strong> / <strong>−</strong> to add or remove one month.
+        Loans whose first installment is in a later month are under <strong>Starts later · बाद में</strong> (and in <strong>All</strong>).
       </p>
     </>
   );
