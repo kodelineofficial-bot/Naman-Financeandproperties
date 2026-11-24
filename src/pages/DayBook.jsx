@@ -20,70 +20,31 @@ const LINK_FOR = {
 };
 
 /**
- * Rows of one loan's payout stay together, and after them comes a Hisaab line for every loan:
- * the day's total (when it has more than one row), what was to be given, given before / today,
- * and how much is still left to give (or "Pura de diya ✓").
+ * Loan payout rows of one person stay together, and after them comes one line with the
+ * person's name, how many entries and their sum — plain addition of the amounts shown
+ * above it (advance included if it is in a row), so nobody has to add them by hand.
  */
-function groupByLoan(rows) {
+function groupByPerson(rows) {
   const out = [];
   const groups = new Map();
   for (const r of rows) {
-    if (r.kind !== 'disbursement' || !r.ref_id) { out.push({ row: r }); continue; }
-    let g = groups.get(r.ref_id);
-    if (!g) { g = { loanId: r.ref_id, party: r.party, rows: [] }; groups.set(r.ref_id, g); out.push({ group: g }); }
+    if (r.kind !== 'disbursement' || !r.party) { out.push({ row: r }); continue; }
+    const key = r.party.trim().toUpperCase();
+    let g = groups.get(key);
+    if (!g) { g = { key, party: r.party, rows: [] }; groups.set(key, g); out.push({ group: g }); }
     g.rows.push(r);
   }
   return out;
 }
 
-function LoanTotalRow({ group, info }) {
-  const many = group.rows.length > 1;
-  if (!info) return null;
-  const left = round2(info.net_disbursable - info.givenUpto);
-  const givenToday = info.givenToday;
-  const givenBefore = round2(info.givenUpto - givenToday);
-  const inHand = round2(sum(group.rows.filter((r) => r.mode !== 'renewal'), (r) => r.handed_over ?? r.amount));
-  const cutToday = round2(givenToday - inHand);
-  const bookOut = sum(group.rows, displayedLedgerAmount);
-  const advanceInBook = round2(bookOut - givenToday);
-  const formula = round2(info.principal - info.interest - info.advance) === info.net_disbursable;
-  const line = (label, value, cls = '') => (
-    <div className="loan-total-line"><span>{label}</span><strong className={cls}>{money(value)}</strong></div>
-  );
+function PersonTotalRow({ group }) {
+  const n = group.rows.length;
   return (
     <tr className="loan-total-row">
-      <td className="nowrap"><strong>Hisaab</strong></td>
-      <td colSpan={3}>
-        <strong>{group.party}</strong>
-        {many && line(`Total · कुल (upar ki ${group.rows.length} entries jodke)`, bookOut, 'amt-out')}
-        {many && advanceInBook > 0 && (
-          <div className="muted small loan-total-sub">
-            Isme {money(advanceInBook)} advance hai jo customer ko nahi gaya, wo Money in mein "Advance" se wapas aaya hai.
-          </div>
-        )}
-        {line(
-          formula
-            ? `Kul dena hai (loan ${money(info.principal)} − byaj ${money(info.interest)} − advance ${money(info.advance)})`
-            : 'Kul dena hai',
-          info.net_disbursable,
-        )}
-        {givenBefore > 0 && line('Pehle diya (pichle dino mein)', givenBefore)}
-        {line('Aaj diya', givenToday)}
-        {inHand > 0 && cutToday > 0 && (
-          <div className="muted small loan-total-sub">
-            Haath mein (cash / UPI) {money(inHand)} + purane dues mein kata (cash nahi gaya) {money(cutToday)}
-          </div>
-        )}
-        {left > 0
-          ? line('Baki dena · बाकी देना', left, 'amt-out')
-          : <div className="loan-total-line"><span>Baki dena</span><span className="muted">Pura de diya ✓</span></div>}
-        {!many && advanceInBook > 0 && (
-          <div className="muted small loan-total-sub">
-            Book mein bahar {money(bookOut)} likha hai, usme {money(advanceInBook)} advance hai jo customer ko nahi gaya,
-            wo Money in mein "Advance" se wapas aaya hai.
-          </div>
-        )}
-      </td>
+      <td className="nowrap"><strong>Total · कुल</strong></td>
+      <td><strong>{group.party}</strong> <span className="muted small">· {n} {n === 1 ? 'entry' : 'entries'}</span></td>
+      <td />
+      <td className="num"><strong className="amt-out">{money(sum(group.rows, displayedLedgerAmount))}</strong></td>
       <td className="no-print" />
     </tr>
   );
@@ -117,7 +78,7 @@ function LedgerRow({ r, onDelete }) {
   );
 }
 
-function LedgerTable({ rows, onDelete, loanInfo }) {
+function LedgerTable({ rows, onDelete }) {
   if (!rows.length) return <Empty>No entries.</Empty>;
   return (
     <div className="table-wrap">
@@ -126,12 +87,12 @@ function LedgerTable({ rows, onDelete, loanInfo }) {
           <tr><th>Type</th><th>Party / Details</th><th>Mode</th><th className="num">Amount</th><th /></tr>
         </thead>
         <tbody>
-          {groupByLoan(rows).map((item) => (item.row ? (
+          {groupByPerson(rows).map((item) => (item.row ? (
             <LedgerRow key={item.row.kind + item.row.id} r={item.row} onDelete={onDelete} />
           ) : (
-            <Fragment key={'loan' + item.group.loanId}>
+            <Fragment key={'person' + item.group.key}>
               {item.group.rows.map((r) => <LedgerRow key={r.kind + r.id} r={r} onDelete={onDelete} />)}
-              <LoanTotalRow group={item.group} info={loanInfo?.[item.group.loanId]} />
+              <PersonTotalRow group={item.group} />
             </Fragment>
           )))}
         </tbody>
@@ -274,25 +235,7 @@ export default function DayBook() {
       (l) => toNum(l.paid_on_date) === 0 && toNum(l.balance_upto) > 0 &&
         (l.frequency === 'monthly' ? toNum(l.short_upto) > 0 : !l.paid_till || l.paid_till < date),
     );
-    // For each loan paid out this day: what it should get in all, and what it got up to this day.
-    const loanIds = [...new Set(entries.filter((e) => e.kind === 'disbursement' && e.ref_id).map((e) => e.ref_id))];
-    const loanInfo = {};
-    if (loanIds.length) {
-      const [loans, given] = await Promise.all([
-        q(supabase.from('loan_summary').select('id,net_disbursable,principal,interest_amount,advance_amount').in('id', loanIds)),
-        q(supabase.from('loan_disbursements').select('loan_id,amount,paid_on').in('loan_id', loanIds).lte('paid_on', date).limit(5000)),
-      ]);
-      for (const l of loans) {
-        const mine = given.filter((g) => g.loan_id === l.id);
-        loanInfo[l.id] = {
-          net_disbursable: toNum(l.net_disbursable), principal: toNum(l.principal),
-          interest: toNum(l.interest_amount), advance: toNum(l.advance_amount),
-          givenUpto: sum(mine, 'amount'), givenToday: sum(mine.filter((g) => g.paid_on === date), 'amount'),
-        };
-      }
-    }
     return {
-      loanInfo,
       opening: openingDetail.opening, openingDetail, entries,
       newLoans: newLoans.map((l) => ({ ...l, ...loanMoneyOnDate(entries, l.id) })), missed,
     };
@@ -397,7 +340,7 @@ export default function DayBook() {
               <LedgerTable rows={ins} onDelete={busy ? () => {} : onDelete} />
             </Card>
             <Card title={`Money out · नाम (${outs.length})`} flush actions={<strong className="amt-out">Book total {money(totalOut)}</strong>}>
-              <LedgerTable rows={outs} onDelete={busy ? () => {} : onDelete} loanInfo={data.loanInfo} />
+              <LedgerTable rows={outs} onDelete={busy ? () => {} : onDelete} />
             </Card>
           </div>
 
