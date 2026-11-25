@@ -43,9 +43,16 @@ function groupByPerson(rows) {
 
 const partTag = (r) => (r.kind === 'loan_advance_cut' ? ' advance' : r.mode === 'renewal' ? ' kata' : '');
 
-function PersonTotalRow({ group }) {
-  const n = group.rows.length;
-  const total = sum(group.rows, displayedLedgerAmount);
+function PersonTotalRow({ group, loanInfo }) {
+  // UPI is not cash, so it is not added in the total (same as the day's cash totals) — shown aside.
+  const cashRows = group.rows.filter((r) => !isUpi(r));
+  const upiRows = group.rows.filter(isUpi);
+  const n = cashRows.length;
+  const total = sum(cashRows, displayedLedgerAmount);
+  const upiTotal = sum(upiRows, displayedLedgerAmount);
+  const loanIds = [...new Set(group.rows.map((r) => r.ref_id).filter(Boolean))];
+  const infos = loanIds.map((id) => loanInfo?.[id]).filter(Boolean);
+  const left = round2(sum(infos, (l) => Math.max(0, l.left)));
   return (
     <tr className="loan-total-row">
       <td className="nowrap"><strong>Total · कुल</strong></td>
@@ -53,8 +60,16 @@ function PersonTotalRow({ group }) {
         <strong>{group.name}</strong> <span className="muted small">· {n} {n === 1 ? 'entry' : 'entries'}</span>
         {n > 1 && (
           <div className="muted small">
-            {group.rows.map((r) => `${money(displayedLedgerAmount(r))}${partTag(r)}`).join(' + ')} = {money(total)}
+            {cashRows.map((r) => `${money(displayedLedgerAmount(r))}${partTag(r)}`).join(' + ')} = {money(total)}
           </div>
+        )}
+        {upiRows.length > 0 && (
+          <div className="muted small">+ UPI {money(upiTotal)} (not counted)</div>
+        )}
+        {infos.length > 0 && (
+          left > 0
+            ? <div className="loan-total-line"><span>Left to give · बाकी देना</span><strong className="amt-out">{money(left)}</strong></div>
+            : <div className="loan-total-line"><span>Left to give</span><span className="muted">Pura de diya ✓</span></div>
         )}
       </td>
       <td className="num"><strong className="amt-out">{money(total)}</strong></td>
@@ -91,7 +106,7 @@ function LedgerRow({ r, onDelete }) {
   );
 }
 
-function LedgerTable({ rows, onDelete }) {
+function LedgerTable({ rows, onDelete, loanInfo }) {
   if (!rows.length) return <Empty>No entries.</Empty>;
   return (
     <div className="table-wrap">
@@ -105,7 +120,7 @@ function LedgerTable({ rows, onDelete }) {
           ) : (
             <Fragment key={'person' + item.group.key}>
               {item.group.rows.map((r) => <LedgerRow key={r.kind + r.id} r={r} onDelete={onDelete} />)}
-              <PersonTotalRow group={item.group} />
+              <PersonTotalRow group={item.group} loanInfo={loanInfo} />
             </Fragment>
           )))}
         </tbody>
@@ -248,7 +263,21 @@ export default function DayBook() {
       (l) => toNum(l.paid_on_date) === 0 && toNum(l.balance_upto) > 0 &&
         (l.frequency === 'monthly' ? toNum(l.short_upto) > 0 : !l.paid_till || l.paid_till < date),
     );
+    // For each loan paid out this day: what it should get in all, and what it got up to this day.
+    const loanIds = [...new Set(entries.filter((e) => ['disbursement', 'loan_advance_cut'].includes(e.kind) && e.ref_id).map((e) => e.ref_id))];
+    const loanInfo = {};
+    if (loanIds.length) {
+      const [loans, given] = await Promise.all([
+        q(supabase.from('loan_summary').select('id,net_disbursable').in('id', loanIds)),
+        q(supabase.from('loan_disbursements').select('loan_id,amount,paid_on').in('loan_id', loanIds).lte('paid_on', date).limit(5000)),
+      ]);
+      for (const l of loans) {
+        const givenUpto = sum(given.filter((g) => g.loan_id === l.id), 'amount');
+        loanInfo[l.id] = { left: round2(toNum(l.net_disbursable) - givenUpto) };
+      }
+    }
     return {
+      loanInfo,
       opening: openingDetail.opening, openingDetail, entries,
       newLoans: newLoans.map((l) => ({ ...l, ...loanMoneyOnDate(entries, l.id) })), missed,
     };
@@ -353,7 +382,7 @@ export default function DayBook() {
               <LedgerTable rows={ins} onDelete={busy ? () => {} : onDelete} />
             </Card>
             <Card title={`Money out · नाम (${outs.length})`} flush actions={<strong className="amt-out">Book total {money(totalOut)}</strong>}>
-              <LedgerTable rows={outs} onDelete={busy ? () => {} : onDelete} />
+              <LedgerTable rows={outs} onDelete={busy ? () => {} : onDelete} loanInfo={data.loanInfo} />
             </Card>
           </div>
 
