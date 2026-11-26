@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 
 const AuthCtx = createContext(null);
@@ -7,6 +7,11 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [admin, setAdmin] = useState(null);
   const [loading, setLoading] = useState(Boolean(supabase));
+  // User whose admin check is done. Supabase re-sends the session on token refresh (about
+  // every hour) and when the tab comes back into view; for the same user nothing is
+  // re-checked, so the screen is not swapped for "Checking login…" and a half-filled
+  // form (new loan etc.) is not lost.
+  const checkedUser = useRef(null);
 
   useEffect(() => {
     if (!supabase) return undefined;
@@ -16,17 +21,21 @@ export function AuthProvider({ children }) {
       if (!alive) return;
       setSession(sess);
       if (!sess) {
+        checkedUser.current = null;
         setAdmin(null);
         setLoading(false);
         return;
       }
+      if (checkedUser.current === sess.user.id) return;
+      checkedUser.current = sess.user.id;
       setLoading(true);
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('admins')
         .select('user_id, name')
         .eq('user_id', sess.user.id)
         .maybeSingle();
       if (!alive) return;
+      if (error) checkedUser.current = null; // network hiccup: check again next time
       setAdmin(data || null);
       setLoading(false);
     }
