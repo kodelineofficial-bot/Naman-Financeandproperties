@@ -64,7 +64,7 @@ function PersonTotalRow({ group, loanInfo }) {
           </div>
         )}
         {upiRows.length > 0 && (
-          <div className="muted small">+ UPI {money(upiTotal)} (not counted)</div>
+          <div className="upi-note">+ UPI {money(upiTotal)} <span className="small">(not counted in cash)</span></div>
         )}
         {infos.length > 0 && (
           left > 0
@@ -72,7 +72,15 @@ function PersonTotalRow({ group, loanInfo }) {
             : <div className="loan-total-line"><span>Left to give</span><span className="muted">Pura de diya ✓</span></div>
         )}
       </td>
-      <td className="num"><strong className="amt-out">{money(total)}</strong></td>
+      <td className="num">
+        <strong className="amt-out">{money(round2(total + upiTotal))}</strong>
+        {upiTotal > 0 && (
+          <div className="small total-split">
+            <span className="upi-note">{money(upiTotal)} UPI</span><br />
+            <span className="amt-out">{money(total)} cash</span>
+          </div>
+        )}
+      </td>
       <td className="no-print" />
     </tr>
   );
